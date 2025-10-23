@@ -1,0 +1,479 @@
+"""
+Transcription service using Whisper for speech-to-text processing.
+Handles audio transcription with GPU acceleration and chunk-based processing.
+"""
+
+import logging
+import os
+import tempfile
+import time
+from typing import Dict, List, Optional, Tuple, Any
+import numpy as np
+import torch
+from faster_whisper import WhisperModel
+import librosa
+
+from ..core.config import get_settings, AUDIO_SETTINGS
+from ..core.database import get_database
+from ..models.transcription import Transcription
+from ..utils.exceptions import TranscriptionError
+from .audio_processor import AudioProcessor
+
+logger = logging.getLogger(__name__)
+
+
+class TranscriptionService:
+    """
+    Transcription service using Whisper for speech-to-text processing.
+    Handles audio transcription with GPU acceleration and chunk-based processing.
+    """
+
+    def __init__(self):
+        self.settings = get_settings()
+        self.model_size = self.settings.whisper_model_size
+        self.device = self._get_device()
+        self.model = None
+        self.audio_processor = AudioProcessor()
+        self.sample_rate = AUDIO_SETTINGS["sample_rate"]
+        self.chunk_length = AUDIO_SETTINGS["chunk_length_s"]
+        self.overlap_length = AUDIO_SETTINGS["overlap_length_s"]
+
+    def _get_device(self) -> str:
+        """Determine the best device for Whisper processing."""
+        if self.settings.use_gpu and torch.cuda.is_available():
+            return "cuda"
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+        else:
+            return "cpu"
+
+    def _load_model(self) -> None:
+        """Load Whisper model with appropriate configuration."""
+        if self.model is not None:
+            return
+
+        try:
+            logger.info(f"Loading Whisper model: {self.model_size} on {self.device}")
+
+            # Configure model based on device
+            compute_type = "float16" if self.device == "cuda" else "float32"
+
+            self.model = WhisperModel(
+                self.model_size,
+                device=self.device,
+                compute_type=compute_type,
+            )
+
+            logger.info(f"Whisper model loaded successfully on {self.device}")
+
+        except Exception as e:
+            logger.error(f"Failed to load Whisper model: {e}")
+            raise TranscriptionError(f"Failed to load transcription model: {str(e)}")
+
+    def transcribe_audio(
+        self,
+        audio_path: str,
+        transcription: Transcription,
+        session,
+        language: Optional[str] = None,
+        progress_callback: Optional[callable] = None,
+    ) -> Dict[str, Any]:
+        """
+        Transcribe audio file using Whisper.
+
+        Args:
+            audio_path: Path to audio file
+            transcription: Transcription model instance
+            session: Database session
+            language: Optional language code
+            progress_callback: Optional progress callback function
+
+        Returns:
+            Dictionary containing transcription results
+        """
+        try:
+            # Ensure model is loaded
+            self._load_model()
+
+            # Update transcription status
+            transcription.mark_as_started()
+            transcription.whisper_model = self.model_size
+            transcription.device_used = self.device
+
+            if progress_callback:
+                progress_callback(10, "Loading audio file")
+
+            # Convert audio to optimal format
+            wav_path = self.audio_processor.convert_to_wav(audio_path)
+
+            try:
+                # Get audio duration for progress tracking
+                duration, _, _ = self.audio_processor._get_audio_info(wav_path)
+                transcription.file_duration = duration
+
+                if progress_callback:
+                    progress_callback(20, "Starting transcription")
+
+                # Process transcription
+                result = self._process_transcription(
+                    wav_path, transcription, session, language, progress_callback
+                )
+
+                # Update transcription with results
+                transcription.full_transcript = result["text"]
+                transcription.language_detected = result.get("language", "unknown")
+                transcription.confidence_score = result.get("avg_confidence", 0.0)
+                transcription.mark_as_completed()
+
+                logger.info(f"Transcription completed for {transcription.session_id}")
+                return result
+
+            finally:
+                # Cleanup temporary file
+                if os.path.exists(wav_path):
+                    os.remove(wav_path)
+
+        except Exception as e:
+            error_msg = f"Transcription failed: {str(e)}"
+            logger.error(error_msg)
+            transcription.mark_as_failed(error_msg)
+            raise TranscriptionError(error_msg)
+
+    def _process_transcription(
+        self,
+        audio_path: str,
+        transcription: Transcription,
+        session,
+        language: Optional[str] = None,
+        progress_callback: Optional[callable] = None,
+    ) -> Dict[str, Any]:
+        """
+        Process transcription with chunk-based approach for long files.
+        """
+        try:
+            # Get audio duration
+            duration, _, _ = self.audio_processor._get_audio_info(audio_path)
+
+            # For short files (< 5 minutes), process directly
+            if duration <= 300:
+                return self._transcribe_single_chunk(
+                    audio_path, transcription, language, progress_callback
+                )
+
+            # For longer files, use chunking
+            return self._transcribe_chunks(
+                audio_path, transcription, duration, language, progress_callback
+            )
+
+        except Exception as e:
+            logger.error(f"Transcription processing failed: {e}")
+            raise TranscriptionError(f"Transcription processing failed: {str(e)}")
+
+    def _transcribe_single_chunk(
+        self,
+        audio_path: str,
+        transcription: Transcription,
+        language: Optional[str] = None,
+        progress_callback: Optional[callable] = None,
+    ) -> Dict[str, Any]:
+        """Transcribe a single audio chunk."""
+        try:
+            if progress_callback:
+                progress_callback(30, "Processing audio")
+
+            # Perform transcription
+            segments, info = self.model.transcribe(
+                audio_path,
+                language=language,
+                beam_size=5,
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500),
+            )
+
+            if progress_callback:
+                progress_callback(70, "Processing results")
+
+            # Process segments
+            all_segments = []
+            total_confidence = 0.0
+            segment_count = 0
+
+            for segment in segments:
+                segment_data = {
+                    "start": segment.start,
+                    "end": segment.end,
+                    "text": segment.text.strip(),
+                    "confidence": getattr(segment, "avg_logprob", 0.0),
+                }
+                all_segments.append(segment_data)
+
+                if hasattr(segment, "avg_logprob"):
+                    total_confidence += segment.avg_logprob
+                    segment_count += 1
+
+            # Calculate average confidence
+            avg_confidence = (
+                total_confidence / segment_count if segment_count > 0 else 0.0
+            )
+
+            # Combine all text
+            full_text = " ".join([seg["text"] for seg in all_segments])
+
+            if progress_callback:
+                progress_callback(90, "Finalizing results")
+
+            result = {
+                "text": full_text,
+                "segments": all_segments,
+                "language": info.language,
+                "language_probability": info.language_probability,
+                "avg_confidence": avg_confidence,
+                "duration": info.duration,
+            }
+
+            # Store segments in transcription
+            for i, seg in enumerate(all_segments):
+                transcription.add_segment(
+                    speaker_name="Speaker",  # Will be updated after diarization
+                    text=seg["text"],
+                    start_time=seg["start"],
+                    end_time=seg["end"],
+                    confidence=seg["confidence"],
+                )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Single chunk transcription failed: {e}")
+            raise TranscriptionError(f"Single chunk transcription failed: {str(e)}")
+
+    def _transcribe_chunks(
+        self,
+        audio_path: str,
+        transcription: Transcription,
+        duration: float,
+        language: Optional[str] = None,
+        progress_callback: Optional[callable] = None,
+    ) -> Dict[str, Any]:
+        """Transcribe long audio file by chunking."""
+        try:
+            # Calculate number of chunks
+            chunk_duration = self.chunk_length
+            overlap_duration = self.overlap_length
+            step_duration = chunk_duration - overlap_duration
+
+            num_chunks = int(np.ceil((duration - overlap_duration) / step_duration))
+
+            logger.info(f"Processing {duration:.2f}s audio in {num_chunks} chunks")
+
+            all_segments = []
+            total_confidence = 0.0
+            total_segments = 0
+            detected_language = None
+            language_probability = 0.0
+
+            # Process each chunk
+            for i in range(num_chunks):
+                start_time = i * step_duration
+                end_time = min(start_time + chunk_duration, duration)
+
+                if progress_callback:
+                    progress = 30 + (i / num_chunks) * 50
+                    progress_callback(
+                        progress, f"Processing chunk {i + 1}/{num_chunks}"
+                    )
+
+                # Extract chunk
+                chunk_path = self._extract_audio_chunk(audio_path, start_time, end_time)
+
+                try:
+                    # Transcribe chunk
+                    chunk_result = self._transcribe_single_chunk(
+                        chunk_path, transcription, language, None
+                    )
+
+                    # Adjust timestamps
+                    for segment in chunk_result["segments"]:
+                        segment["start"] += start_time
+                        segment["end"] += start_time
+
+                    all_segments.extend(chunk_result["segments"])
+
+                    # Update confidence statistics
+                    if chunk_result.get("avg_confidence"):
+                        total_confidence += chunk_result["avg_confidence"]
+                        total_segments += 1
+
+                    # Store language info from first chunk
+                    if detected_language is None:
+                        detected_language = chunk_result.get("language", "unknown")
+                        language_probability = chunk_result.get(
+                            "language_probability", 0.0
+                        )
+
+                    # Add segments to transcription
+                    for segment in chunk_result["segments"]:
+                        transcription.add_segment(
+                            speaker_name="Speaker",  # Will be updated after diarization
+                            text=segment["text"],
+                            start_time=segment["start"],
+                            end_time=segment["end"],
+                            confidence=segment["confidence"],
+                        )
+
+                finally:
+                    # Cleanup chunk file
+                    if os.path.exists(chunk_path):
+                        os.remove(chunk_path)
+
+            # Merge overlapping segments
+            merged_segments = self._merge_overlapping_segments(
+                all_segments, overlap_duration
+            )
+
+            # Combine all text
+            full_text = " ".join([seg["text"] for seg in merged_segments])
+
+            # Calculate average confidence
+            avg_confidence = (
+                total_confidence / total_segments if total_segments > 0 else 0.0
+            )
+
+            if progress_callback:
+                progress_callback(90, "Finalizing results")
+
+            result = {
+                "text": full_text,
+                "segments": merged_segments,
+                "language": detected_language,
+                "language_probability": language_probability,
+                "avg_confidence": avg_confidence,
+                "duration": duration,
+            }
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Chunk transcription failed: {e}")
+            raise TranscriptionError(f"Chunk transcription failed: {str(e)}")
+
+    def _extract_audio_chunk(
+        self, audio_path: str, start_time: float, end_time: float
+    ) -> str:
+        """Extract a chunk of audio from the full file."""
+        try:
+            from pydub import AudioSegment
+
+            audio = AudioSegment.from_file(audio_path)
+
+            start_ms = int(start_time * 1000)
+            end_ms = int(end_time * 1000)
+
+            chunk = audio[start_ms:end_ms]
+
+            # Save to temporary file
+            temp_dir = tempfile.gettempdir()
+            chunk_path = os.path.join(
+                temp_dir, f"chunk_{start_time:.1f}_{end_time:.1f}.wav"
+            )
+            chunk.export(chunk_path, format="wav")
+
+            return chunk_path
+
+        except Exception as e:
+            logger.error(f"Failed to extract audio chunk: {e}")
+            raise TranscriptionError(f"Failed to extract audio chunk: {str(e)}")
+
+    def _merge_overlapping_segments(
+        self, segments: List[Dict], overlap_duration: float
+    ) -> List[Dict]:
+        """Merge segments that may overlap due to chunk processing."""
+        if not segments:
+            return []
+
+        # Sort segments by start time
+        segments.sort(key=lambda x: x["start"])
+
+        merged = []
+        current_segment = segments[0].copy()
+
+        for next_segment in segments[1:]:
+            # Check for overlap
+            if next_segment["start"] <= current_segment["end"] + overlap_duration:
+                # Merge segments
+                current_segment["end"] = max(
+                    current_segment["end"], next_segment["end"]
+                )
+                current_segment["text"] += " " + next_segment["text"]
+                current_segment["confidence"] = (
+                    current_segment["confidence"] + next_segment["confidence"]
+                ) / 2
+            else:
+                # No overlap, add current and start new
+                merged.append(current_segment)
+                current_segment = next_segment.copy()
+
+        # Add the last segment
+        merged.append(current_segment)
+
+        return merged
+
+    def get_supported_languages(self) -> Dict[str, str]:
+        """Get list of supported languages for transcription."""
+        return {
+            "auto": "Auto-detect",
+            "en": "English",
+            "es": "Spanish",
+            "fr": "French",
+            "de": "German",
+            "it": "Italian",
+            "pt": "Portuguese",
+            "ru": "Russian",
+            "ja": "Japanese",
+            "ko": "Korean",
+            "zh": "Chinese",
+            "ar": "Arabic",
+            "hi": "Hindi",
+            "nl": "Dutch",
+            "sv": "Swedish",
+            "no": "Norwegian",
+            "da": "Danish",
+            "fi": "Finnish",
+            "pl": "Polish",
+            "tr": "Turkish",
+        }
+
+    def estimate_processing_time(self, audio_duration: float) -> float:
+        """Estimate processing time based on audio duration and device."""
+        # Base processing time ratios (seconds of processing per second of audio)
+        if self.device == "cuda":
+            ratio = 0.1  # GPU is much faster
+        elif self.device == "mps":
+            ratio = 0.3  # Apple Silicon is fast
+        else:
+            ratio = 1.0  # CPU is slower
+
+        # Adjust based on model size
+        model_multipliers = {
+            "tiny": 0.3,
+            "base": 0.5,
+            "small": 0.8,
+            "medium": 1.2,
+            "large-v3": 2.0,
+        }
+
+        multiplier = model_multipliers.get(self.model_size, 1.0)
+
+        return audio_duration * ratio * multiplier
+
+    def cleanup(self) -> None:
+        """Cleanup resources."""
+        if self.model is not None:
+            del self.model
+            self.model = None
+
+            # Clear GPU cache if using CUDA
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
+
+            logger.info("Transcription service cleaned up")

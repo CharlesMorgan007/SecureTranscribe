@@ -1,0 +1,28 @@
+Environment / Programming Language
+I want to create a new Python 3 application names "SecureTranscribe" in the current directory that utilizes a Python virtual environment. I need you to determine what version of Python 3 (3.11 - 3.14) is the most compatable with the latest versions of the Python modules that will be required for this application.
+
+Purpose
+The purpose of the application is to securely transcribe and perform diarization of audio files, converting them into text using offline/locally-run advanced speech recognition technology. It will provide users with a seamless and secure experience, ensuring the privacy and confidentiality of their audio data.
+
+Specification:
+- The application will use a web-based interface for users to upload various audio file formats, label independent speakers identified during the diarization process, view the transcribed text, and export the results in various formats such as PDF, CSV, TXT, and JSON.
+- The application must be able to process all functions required using locally run services and leveraging the NVIDIA RTX 4090 GPU for acceleration.
+- The application should convert any uploaded audio files into a common format for best processing results (dependent upon the modules/libraries selected)
+- After the transcription and diarization process, the application must present a web-based interface that allows the user to listen to a 2-10 second audio clip of each identified speaker so that they can lable/name the speakers.
+- The application must store speaker identification traits in a local SQLite3 database so that future runs can automatically assign previously named speakers during the diarization process in future audio file processing. This  information can be shared across all users of the application.
+- After speaker identification, the application should provide a summary of the processed file, including the total duration of the audio, the number of speakers identified, and the average confidence score of the transcription.
+- The application must allow the user to specify the output format of the completed transcript and indicate if they want any of the following included in the final document: Meeting Summary, Action Items, Next Steps, and/or Reccomendations.
+- This application must preserve privacy/confidentiality, so data and audio files should be cleaned up after the user downloads the final document/transcription.
+- This application should be able to support multiple users from an office, but only needs to queue audio files for processing, rather than processing them simultaneously. Because of the file cleanup requirements, I think only session management is needed and not necessarily a full-fledged user authentication system.
+- The application should utilize the best-in-class speech-to-text and speaker diarization libraries available.
+- The web interface must provide visual feedback indicating the progress of the transcription and diarization processes. Additionally, if another user is currently processing an audio file, the interface should display a message indicating that the file is being processed and provide an estimated time remaining and where in the queue the current user's processing request is.
+- There must be robust error handling throughout the application and web interface.
+- Unit testing should have greater than 80% code coverage.
+- Linting must be used to verify that there is no unreachable/unused code or functions in the finished application.
+
+
+Special Notes:
+- The maching being used to develop this application does not have a GPU, but the deployment server located at 172.16.36.100 does. Unit test will need to be able to run tests in both development and deployment environments.
+- Use the MIT License for this application
+- The sourcecode for this application will be pushed to a public repository on GitHub. Please initialize the repository and push the code.
+- Documentation for this project should also provide step-by-step instructions on how to setup the application locally and on an AWS/cloud provider of the user's choice.
