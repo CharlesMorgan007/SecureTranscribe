@@ -6,7 +6,56 @@ Handles environment variables, application settings, and audio processing parame
 import os
 from functools import lru_cache
 from typing import List, Optional
-from pydantic import BaseSettings, validator
+from pydantic_settings import BaseSettings, validator
+from pydantic import Field
+
+# Audio processing configuration
+AUDIO_SETTINGS = {
+    "sample_rate": 16000,
+    "chunk_length_s": 30,
+    "overlap_length_s": 5,
+    "max_speakers": 10,
+    "min_speaker_duration": 2.0,
+    "confidence_threshold": 0.8,
+    "supported_formats": [".mp3", ".wav", ".m4a", ".flac", ".ogg"],
+    "preview_duration": 10,  # seconds for speaker preview clips
+    "min_clip_duration": 2,  # seconds for speaker preview
+}
+
+# Export configuration
+EXPORT_SETTINGS = {
+    "formats": ["pdf", "csv", "txt", "json"],
+    "include_options": [
+        "meeting_summary",
+        "action_items",
+        "next_steps",
+        "recommendations",
+    ],
+    "pdf_template": "default",
+    "csv_delimiter": ",",
+    "json_indent": 2,
+}
+
+# Database settings
+DATABASE_SETTINGS = {
+    "echo": False,  # Set to True for SQL debugging
+    "pool_pre_ping": True,
+    "pool_recycle": 3600,
+}
+
+# Security settings
+SECURITY_SETTINGS = {
+    "session_timeout": 3600,  # 1 hour
+    "max_upload_size": 500 * 1024 * 1024,  # 500MB
+    "allowed_mime_types": [
+        "audio/mpeg",
+        "audio/wav",
+        "audio/mp4",
+        "audio/flac",
+        "audio/ogg",
+    ],
+    "rate_limit": {"requests_per_minute": 60, "burst_size": 10},
+}
 
 
 class Settings(BaseSettings):
@@ -104,52 +153,6 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
-
-
-# Audio processing configuration
-AUDIO_SETTINGS = {
-    "sample_rate": 16000,
-    "chunk_length_s": 30,
-    "overlap_length_s": 5,
-    "max_speakers": 10,
-    "min_speaker_duration": 2.0,
-    "confidence_threshold": 0.8,
-    "supported_formats": [".mp3", ".wav", ".m4a", ".flac", ".ogg"],
-    "preview_duration": 10,  # seconds for speaker preview clips
-    "min_clip_duration": 2,  # seconds for speaker preview
-}
-
-# Export configuration
-EXPORT_SETTINGS = {
-    "formats": ["pdf", "csv", "txt", "json"],
-    "include_options": [
-        "meeting_summary",
-        "action_items",
-        "next_steps",
-        "recommendations",
-    ],
-    "pdf_template": "default",
-    "csv_delimiter": ",",
-    "json_indent": 2,
-}
-
-# Database settings
-DATABASE_SETTINGS = {
-    "echo": False,  # Set to True for SQL debugging
-    "pool_pre_ping": True,
-    "pool_recycle": 3600,
-}
-
-# Security settings
-SECURITY_SETTINGS = {
-    "session_timeout": 3600,  # 1 hour
-    "max_upload_size": 500 * 1024 * 1024,  # 500MB
-    "allowed_mime_types": [
-        "audio/mpeg",
-        "audio/wav",
-        "audio/mp4",
-        "audio/flac",
-        "audio/ogg",
-    ],
-    "rate_limit": {"requests_per_minute": 60, "burst_size": 10},
-}
+```
+</think></think></think>
+Now let me run the config test again:
