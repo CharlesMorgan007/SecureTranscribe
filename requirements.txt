@@ -11,7 +11,7 @@ soundfile==0.12.1
 pydub==0.25.1
 
 # GPU Support
-torch==2.1.1
+torch==2.8.0
 torchaudio==2.1.1
 
 # Database
