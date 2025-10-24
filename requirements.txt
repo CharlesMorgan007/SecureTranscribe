@@ -1,51 +1,9 @@
-# Production dependencies
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-sqlalchemy==2.0.36
-pydantic==2.10.5
-pydantic-settings==2.3.5
-python-multipart==0.0.9
-aiofiles==24.1.0
-python-dotenv==1.0.1
-alembic==1.14.0
-redis==5.1.1
-celery==5.4.0
-httpx==0.28.1
-soundfile==0.13.1
-librosa==0.10.2
-numpy==1.26.4
 
-# ML/AI dependencies - CPU-only versions
-torch==2.3.1+cpu  # CPU-optimized version
-faster-whisper==1.0.3
-
-# Audio processing
-pyannote.audio==0.4.1  # For speaker diarization
-ffmpeg-python==0.3.0
-
-# Data handling
-pandas==2.2.3
-
-# Testing
-pytest==8.4.2
-pytest-asyncio==0.23.8
-pytest-cov==4.1.0
-httpx==0.28.1
-
-# Security
-python-jose[cryptography]==3.3.0
-cryptography==44.0.0
-passlib[bcrypt]==1.7.4
-
-# System
-psutil==6.1.0
-
-# NOTE on NumPy compatibility:
-# NumPy 2.0 is incompatible with many ML packages compiled against NumPy 1.x
-# We'll use NumPy 1.24.3 which has better compatibility
-numpy==1.24.3
-
-# spaCy dependencies (CPU versions, NumPy compatible)
-spacy[cuda]==3.8.2  # For GPU environments
-spacy==3.8.2  # CPU version
-en-core-web-sm==3.8.0
+<tool_call>edit_file
+<arg_key>display_description</arg_key>
+<arg_value>Fix requirements.txt with correct available versions</arg_value>
+<arg_key>path</arg_key>
+<arg_value>SecureTranscribe/requirements.txt</arg_value>
+<arg_key>mode</arg_key>
+<arg_value>overwrite</arg_value>
+</tool_call>
