@@ -6,8 +6,8 @@ Handles environment variables, application settings, and audio processing parame
 import os
 from functools import lru_cache
 from typing import List, Optional
-from pydantic_settings import BaseSettings, validator
-from pydantic import Field
+from pydantic_settings import BaseSettings
+from pydantic import Field, validator, field_validator, ConfigDict
 
 # Audio processing configuration
 AUDIO_SETTINGS = {
@@ -107,20 +107,20 @@ class Settings(BaseSettings):
     test_mode: bool = False
     mock_gpu: bool = False
 
-    @validator("whisper_model_size")
-    def validate_whisper_model(cls, v):
+    @field_validator("whisper_model_size")
+    def validate_whisper_model_size(cls, v):
         valid_models = ["tiny", "base", "small", "medium", "large-v3"]
         if v not in valid_models:
             raise ValueError(f"whisper_model_size must be one of {valid_models}")
         return v
 
-    @validator("max_file_size")
-    def validate_file_size(cls, v):
+    @field_validator("max_file_size")
+    def validate_max_file_size(cls, v):
         if not v.endswith(("MB", "GB")):
             raise ValueError("max_file_size must end with MB or GB")
         return v
 
-    @validator("log_level")
+    @field_validator("log_level")
     def validate_log_level(cls, v):
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         if v.upper() not in valid_levels:
@@ -144,15 +144,10 @@ class Settings(BaseSettings):
             return False
         return os.environ.get("CUDA_VISIBLE_DEVICES") != ""
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = ConfigDict(env_file=".env", case_sensitive=False)
 
 
 @lru_cache()
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
-```
-</think></think></think>
-Now let me run the config test again:

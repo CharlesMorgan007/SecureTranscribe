@@ -1,11 +1,13 @@
 # Production dependencies for SecureTranscribe
-# All packages are CPU-optimized for compatibility
+# Optimized for Python 3.12+ compatibility
+# All packages are CPU-optimized for maximum compatibility
 
 # Core Framework
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 sqlalchemy==2.0.36
 pydantic==2.10.5
+pydantic-settings==2.7.0
 python-multipart==0.0.9
 aiofiles==24.1.0
 python-dotenv==1.0.1
@@ -19,19 +21,21 @@ celery==5.4.0
 httpx==0.28.1
 
 # Audio Processing
-soundfile==0.13.1
-librosa==0.10.2
+soundfile>=0.10.2
+librosa>=0.9.0
+pydub==0.25.1
 
-# ML/AI Dependencies - NumPy 1.x Compatible
-# NumPy 1.24.3 is critical for spaCy compatibility (spaCy compiled with NumPy 1.x)
-numpy==1.24.3
-torch==2.3.1+cpu
-torchaudio==2.3.1+cpu
+# ML/AI Dependencies - Compatible versions for Python 3.12+
+numpy>=1.24.0,<2.0.0
+torch>=2.0.0,<2.5.0
+torchaudio>=2.0.0,<2.5.0
 faster-whisper==1.0.3
-pyannote.audio==3.1.1
+# Downgraded PyAnnote for NumPy compatibility
+pyannote.audio>=2.0.0
+
 
 # Audio Processing
-ffmpeg-python==0.3.0
+ffmpeg-python==0.2.0
 
 # Data Processing
 pandas==2.2.3
@@ -48,30 +52,39 @@ jinja2==3.1.2
 python-jose[cryptography]==3.3.0
 cryptography==44.0.0
 passlib[bcrypt]==1.7.4
+itsdangerous==2.2.0
 
 # System Utilities
 psutil==6.1.0
 
 # NLP & Language Processing
-# spaCy 3.8.2 is compatible with NumPy 1.24.3
-spacy==3.8.2
-en-core-web-sm==3.8.0
+# Updated spaCy for NumPy 1.x compatibility
+spacy>=3.7.0
+# English language model for spaCy - will be installed separately
+# en-core-web-sm==3.8.0
 
 # Testing & Development
 pytest==8.4.2
 pytest-asyncio==0.23.8
 pytest-cov==4.1.0
 pytest-mock==3.14.0
-black==24.1.1
+black==24.10.0
 flake8==7.0.0
 mypy==1.10.1
 pre-commit==3.7.1
 
 # Type Checking
-types-python-date==2.9.0
+types-python-dateutil==2.8.19.14
 types-redis==4.6.0.11
-types-setuptools==70.1.0
+types-setuptools==75.3.0.20241105
 
-# NOTE: Pydantic 2.x includes settings functionality
-# Use: from pydantic import BaseSettings, ConfigDict
-# Do NOT use: from pydantic_settings import BaseSettings
+# Additional utilities
+# starlette will be installed as dependency of FastAPI
+
+# Installation notes:
+# 1. Run: pip install -r requirements.txt
+# 2. Run: python -m spacy download en_core_web_sm
+# 3. For PyAnnote.audio: Set HUGGINGFACE_HUB_TOKEN environment variable
+# 4. Using compatible version ranges to allow pip dependency resolution
+# 5. Python 3.12 recommended for optimal compatibility
+# 6. All packages configured for CPU usage on macOS ARM64

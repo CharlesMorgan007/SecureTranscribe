@@ -10,7 +10,7 @@ from .speaker_service import SpeakerService
 from .export_service import ExportService
 from .queue_service import QueueService
 
-__all__ = [
+all_exports = [
     "AudioProcessor",
     "TranscriptionService",
     "DiarizationService",

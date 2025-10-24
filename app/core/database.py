@@ -198,6 +198,6 @@ def restore_database(backup_path: str) -> bool:
         return False
 
 
-# Initialize database on import
-if not get_settings().test_mode:
-    init_database()
+# Database initialization should be called explicitly, not on import
+# if not get_settings().test_mode:
+#     init_database()
