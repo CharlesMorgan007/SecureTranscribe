@@ -49,7 +49,12 @@ SECURITY_SETTINGS = {
     "max_upload_size": 500 * 1024 * 1024,  # 500MB
     "allowed_mime_types": [
         "audio/mpeg",
+        "audio/mp3",
+        "audio/mpeg3",
+        "audio/x-mpeg",
+        "audio/x-mp3",
         "audio/wav",
+        "audio/x-wav",
         "audio/mp4",
         "audio/flac",
         "audio/ogg",
