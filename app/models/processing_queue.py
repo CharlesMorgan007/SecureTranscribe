@@ -121,6 +121,13 @@ class ProcessingQueue(Base):
             return (self.started_at - self.created_at).total_seconds()
         return (datetime.utcnow() - self.created_at).total_seconds()
 
+    @wait_time.expression
+    def wait_time(cls):
+        """SQL expression for wait_time."""
+        from sqlalchemy import extract
+
+        return cls.started_at - cls.created_at
+
     @hybrid_property
     def processing_time(self) -> Optional[float]:
         """Get processing time in seconds."""
@@ -130,12 +137,22 @@ class ProcessingQueue(Base):
             return (datetime.utcnow() - self.started_at).total_seconds()
         return None
 
+    @processing_time.expression
+    def processing_time(cls):
+        """SQL expression for processing_time."""
+        return cls.completed_at - cls.started_at
+
     @hybrid_property
     def total_time(self) -> float:
         """Get total time in seconds."""
         if self.completed_at:
             return (self.completed_at - self.created_at).total_seconds()
         return (datetime.utcnow() - self.created_at).total_seconds()
+
+    @total_time.expression
+    def total_time(cls):
+        """SQL expression for total_time."""
+        return cls.completed_at - cls.created_at
 
     @hybrid_property
     def estimated_completion(self) -> Optional[datetime]:
@@ -430,16 +447,21 @@ class ProcessingQueue(Base):
 
         # Average wait time
         avg_wait_time = (
-            session.query(func.avg(cls.wait_time))
+            session.query(
+                func.avg(func.extract("epoch", cls.started_at - cls.created_at))
+            )
             .filter(cls.status.in_(["processing", "completed", "failed"]))
+            .filter(cls.started_at.isnot(None))
             .scalar()
             or 0.0
         )
 
         # Average processing time
         avg_processing_time = (
-            session.query(func.avg(cls.processing_time))
-            .filter(cls.status == "completed", cls.processing_time.isnot(None))
+            session.query(
+                func.avg(func.extract("epoch", cls.completed_at - cls.started_at))
+            )
+            .filter(cls.status == "completed", cls.completed_at.isnot(None))
             .scalar()
             or 0.0
         )

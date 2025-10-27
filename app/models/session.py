@@ -74,12 +74,26 @@ class UserSession(Base):
         """Get session age in seconds."""
         return (datetime.utcnow() - self.created_at).total_seconds()
 
+    @session_age.expression
+    def session_age(cls):
+        """SQL expression for session_age."""
+        from sqlalchemy import extract
+
+        return extract("epoch", datetime.utcnow() - cls.created_at)
+
     @hybrid_property
     def time_until_expiry(self) -> float:
         """Get time until expiry in seconds."""
         if self.is_expired:
             return 0.0
         return (self.expires_at - datetime.utcnow()).total_seconds()
+
+    @time_until_expiry.expression
+    def time_until_expiry(cls):
+        """SQL expression for time_until_expiry."""
+        from sqlalchemy import extract
+
+        return extract("epoch", cls.expires_at - datetime.utcnow())
 
     @hybrid_property
     def formatted_session_age(self) -> str:

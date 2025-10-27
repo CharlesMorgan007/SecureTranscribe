@@ -120,6 +120,13 @@ class Transcription(Base):
             return (datetime.utcnow() - self.started_at).total_seconds()
         return None
 
+    @processing_duration.expression
+    def processing_duration(cls):
+        """SQL expression for processing_duration."""
+        from sqlalchemy import extract
+
+        return extract("epoch", cls.completed_at - cls.started_at)
+
     @hybrid_property
     def formatted_duration(self) -> str:
         """Get formatted duration string."""

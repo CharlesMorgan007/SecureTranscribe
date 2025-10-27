@@ -16,6 +16,7 @@ from fastapi import (
     File,
     Form,
     BackgroundTasks,
+    Request,
 )
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -25,6 +26,7 @@ from app.core.config import get_settings
 from app.models.transcription import Transcription
 from app.models.session import UserSession
 from app.models.speaker import Speaker
+from app.models.processing_queue import ProcessingQueue
 from app.services.transcription_service import TranscriptionService
 from app.services.diarization_service import DiarizationService
 from app.services.export_service import ExportService
@@ -52,7 +54,9 @@ router = APIRouter()
 settings = get_settings()
 
 
-def get_current_session(request, db: Session = Depends(get_database)) -> UserSession:
+def get_current_session(
+    request: Request, db: Session = Depends(get_database)
+) -> UserSession:
     """Get or create user session."""
     session_token = request.session.get("session_token")
 
@@ -60,7 +64,6 @@ def get_current_session(request, db: Session = Depends(get_database)) -> UserSes
         user_session = UserSession.get_by_token(db, session_token)
         if user_session and user_session.is_valid:
             user_session.update_last_accessed()
-            db.commit()
             return user_session
 
     # Create new session
@@ -76,7 +79,7 @@ def get_current_session(request, db: Session = Depends(get_database)) -> UserSes
 
 @router.post("/upload")
 async def upload_audio_file(
-    request,
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     language: Optional[str] = Form(None),
@@ -541,7 +544,16 @@ async def delete_transcription(
         if transcription.status in ["pending", "processing"]:
             queue_service = get_queue_service()
             # Find and cancel job (simplified implementation)
-            logger.info(f"Cancelling processing for transcription {transcription_id}")
+            # Find job by transcription_id and cancel it
+            with next(get_database()) as queue_db:
+                job = (
+                    queue_db.query(ProcessingQueue)
+                    .filter(ProcessingQueue.transcription_id == transcription_id)
+                    .filter(ProcessingQueue.status.in_(["queued", "processing"]))
+                    .first()
+                )
+                if job:
+                    queue_service.cancel_job(job.job_id)
 
         # Delete transcription record
         db.delete(transcription)
