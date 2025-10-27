@@ -143,17 +143,16 @@ def refresh_database_sessions():
     if SessionLocal:
         SessionLocal.remove()
 
+
 def get_database_manager():
     """Get database manager for external use."""
     return DatabaseManager()
+
 
 def refresh_database_sessions():
     """Refresh all database sessions to clear cache."""
     if SessionLocal:
         SessionLocal.remove()
-            raise
-        finally:
-            db.close()
 
 
 def close_database() -> None:
