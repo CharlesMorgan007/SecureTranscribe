@@ -34,12 +34,17 @@ from app.api.speakers import router as speakers_router
 from app.api.sessions import router as sessions_router
 from app.api.queue import router as queue_router
 
+# Ensure logs directory exists using absolute path
+app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+logs_dir = os.path.join(app_root, "logs")
+os.makedirs(logs_dir, exist_ok=True)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("logs/securetranscribe.log"),
+        logging.FileHandler(os.path.join(logs_dir, "securetranscribe.log")),
         logging.StreamHandler(sys.stdout),
     ],
 )
@@ -55,10 +60,19 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting SecureTranscribe application...")
 
-    # Ensure required directories exist
-    os.makedirs("logs", exist_ok=True)
-    os.makedirs(settings.upload_dir, exist_ok=True)
-    os.makedirs(settings.processed_dir, exist_ok=True)
+    # Ensure required directories exist using absolute paths
+    os.makedirs(logs_dir, exist_ok=True)
+
+    # Convert relative paths to absolute paths
+    upload_dir = settings.upload_dir
+    processed_dir = settings.processed_dir
+    if not os.path.isabs(upload_dir):
+        upload_dir = os.path.join(app_root, upload_dir.lstrip("./"))
+    if not os.path.isabs(processed_dir):
+        processed_dir = os.path.join(app_root, processed_dir.lstrip("./"))
+
+    os.makedirs(upload_dir, exist_ok=True)
+    os.makedirs(processed_dir, exist_ok=True)
 
     # Initialize database
     try:
