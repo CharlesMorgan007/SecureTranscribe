@@ -80,6 +80,7 @@ class Settings(BaseSettings):
     torch_cuda_arch_list: str = "8.6"
     whisper_model_size: str = "base"
     pyannote_model: str = "pyannote/speaker-diarization-3.1"
+    huggingface_token: Optional[str] = None
 
     # File Storage
     upload_dir: str = "./uploads"
@@ -149,7 +150,7 @@ class Settings(BaseSettings):
             return False
         return os.environ.get("CUDA_VISIBLE_DEVICES") != ""
 
-    model_config = ConfigDict(env_file=".env", case_sensitive=False)
+    model_config = ConfigDict(env_file=".env", case_sensitive=False, extra="allow")
 
 
 @lru_cache()
