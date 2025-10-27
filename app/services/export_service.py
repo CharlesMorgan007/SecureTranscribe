@@ -19,10 +19,10 @@ from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
-from ..core.config import get_settings, EXPORT_SETTINGS
-from ..models.transcription import Transcription
-from ..models.speaker import Speaker
-from ..utils.exceptions import ExportError
+from app.core.config import get_settings, EXPORT_SETTINGS
+from app.models.transcription import Transcription
+from app.models.speaker import Speaker
+from app.utils.exceptions import ExportError
 
 logger = logging.getLogger(__name__)
 

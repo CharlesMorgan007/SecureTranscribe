@@ -21,8 +21,8 @@ from sqlalchemy import (
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 
-from ..core.database import Base
-from ..core.config import get_settings
+from app.core.database import Base
+from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 

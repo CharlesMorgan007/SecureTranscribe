@@ -25,14 +25,14 @@ import uvicorn
 # Add app to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core.config import get_settings, SECURITY_SETTINGS
-from core.database import init_database, get_database
-from services.queue_service import get_queue_service
-from utils.exceptions import SecureTranscribeError, ValidationError, FileUploadError
-from api.transcription import router as transcription_router
-from api.speakers import router as speakers_router
-from api.sessions import router as sessions_router
-from api.queue import router as queue_router
+from app.core.config import get_settings, SECURITY_SETTINGS
+from app.core.database import init_database, get_database
+from app.services.queue_service import get_queue_service
+from app.utils.exceptions import SecureTranscribeError, ValidationError, FileUploadError
+from app.api.transcription import router as transcription_router
+from app.api.speakers import router as speakers_router
+from app.api.sessions import router as sessions_router
+from app.api.queue import router as queue_router
 
 # Configure logging
 logging.basicConfig(
@@ -115,10 +115,10 @@ app.add_middleware(
 )
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Setup templates
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory="app/templates")
 
 # Include API routers
 app.include_router(

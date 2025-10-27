@@ -12,14 +12,14 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 import time
 
-from ..core.config import get_settings
-from ..core.database import get_database
-from ..models.processing_queue import ProcessingQueue
-from ..models.transcription import Transcription
-from ..models.session import UserSession
-from ..utils.exceptions import QueueError
-from .transcription_service import TranscriptionService
-from .diarization_service import DiarizationService
+from app.core.config import get_settings
+from app.core.database import get_database
+from app.models.processing_queue import ProcessingQueue
+from app.models.transcription import Transcription
+from app.models.session import UserSession
+from app.utils.exceptions import QueueError
+from app.services.transcription_service import TranscriptionService
+from app.services.diarization_service import DiarizationService
 
 logger = logging.getLogger(__name__)
 

@@ -14,12 +14,12 @@ from pyannote.audio import Pipeline
 from pyannote.core import Annotation, Segment
 import librosa
 
-from ..core.config import get_settings, AUDIO_SETTINGS
-from ..core.database import get_database
-from ..models.transcription import Transcription
-from ..models.speaker import Speaker
-from ..utils.exceptions import DiarizationError
-from .audio_processor import AudioProcessor
+from app.core.config import get_settings, AUDIO_SETTINGS
+from app.core.database import get_database
+from app.models.transcription import Transcription
+from app.models.speaker import Speaker
+from app.utils.exceptions import DiarizationError
+from app.services.audio_processor import AudioProcessor
 
 logger = logging.getLogger(__name__)
 

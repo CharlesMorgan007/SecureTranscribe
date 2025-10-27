@@ -13,16 +13,16 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 
-from ..core.database import get_database
-from ..models.session import UserSession
-from ..models.processing_queue import ProcessingQueue
-from ..services.queue_service import get_queue_service
-from ..utils.exceptions import (
+from app.core.database import get_database
+from app.models.session import UserSession
+from app.models.processing_queue import ProcessingQueue
+from app.services.queue_service import get_queue_service
+from app.utils.exceptions import (
     SecureTranscribeError,
     ValidationError,
     QueueError,
 )
-from .transcription import get_current_session
+from app.api.transcription import get_current_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

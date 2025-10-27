@@ -11,8 +11,8 @@ from typing import Dict, List, Optional, Any
 from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Boolean, JSON
 from sqlalchemy.ext.hybrid import hybrid_property
 
-from ..core.database import Base
-from ..core.config import get_settings, SECURITY_SETTINGS
+from app.core.database import Base
+from app.core.config import get_settings, SECURITY_SETTINGS
 
 logger = logging.getLogger(__name__)
 

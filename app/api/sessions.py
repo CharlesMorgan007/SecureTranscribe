@@ -14,9 +14,9 @@ from fastapi import (
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from ..core.database import get_database
-from ..models.session import UserSession
-from ..utils.exceptions import (
+from app.core.database import get_database
+from app.models.session import UserSession
+from app.utils.exceptions import (
     SecureTranscribeError,
     ValidationError,
     AuthenticationError,

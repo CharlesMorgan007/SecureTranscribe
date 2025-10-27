@@ -60,10 +60,10 @@ def init_database() -> None:
         create_database_engine()
 
     # Import all models to ensure they're registered with Base
-    from ..models.speaker import Speaker
-    from ..models.transcription import Transcription
-    from ..models.session import UserSession
-    from ..models.processing_queue import ProcessingQueue
+    from app.models.speaker import Speaker
+    from app.models.transcription import Transcription
+    from app.models.session import UserSession
+    from app.models.processing_queue import ProcessingQueue
 
     # Create all tables
     Base.metadata.create_all(bind=engine)

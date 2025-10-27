@@ -81,6 +81,10 @@ types-setuptools==75.3.0.20241105
 # Additional utilities
 # starlette will be installed as dependency of FastAPI
 
+# Database items
+sqlalchemy
+pydantic_settings
+
 # Installation notes:
 # 1. Run: pip install -r requirements.txt
 # 2. Run: python -m spacy download en_core_web_sm

@@ -10,12 +10,12 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 import torch
 
-from ..core.config import get_settings, AUDIO_SETTINGS
-from ..core.database import get_database
-from ..models.speaker import Speaker
-from ..models.transcription import Transcription
-from ..utils.exceptions import SpeakerError
-from .audio_processor import AudioProcessor
+from app.core.config import get_settings, AUDIO_SETTINGS
+from app.core.database import get_database
+from app.models.speaker import Speaker
+from app.models.transcription import Transcription
+from app.utils.exceptions import SpeakerError
+from app.services.audio_processor import AudioProcessor
 
 logger = logging.getLogger(__name__)
 

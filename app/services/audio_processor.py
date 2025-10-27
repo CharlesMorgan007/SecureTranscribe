@@ -15,8 +15,8 @@ import numpy as np
 from pydub import AudioSegment
 import magic
 
-from core.config import get_settings, AUDIO_SETTINGS, SECURITY_SETTINGS
-from utils.exceptions import AudioProcessingError
+from app.core.config import get_settings, AUDIO_SETTINGS, SECURITY_SETTINGS
+from app.utils.exceptions import AudioProcessingError
 
 logger = logging.getLogger(__name__)
 

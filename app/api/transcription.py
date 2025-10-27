@@ -20,17 +20,17 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from ..core.database import get_database
-from ..core.config import get_settings
-from ..models.transcription import Transcription
-from ..models.session import UserSession
-from ..models.speaker import Speaker
-from ..services.transcription_service import TranscriptionService
-from ..services.diarization_service import DiarizationService
-from ..services.export_service import ExportService
-from ..services.audio_processor import AudioProcessor
-from ..services.queue_service import get_queue_service
-from ..utils.exceptions import (
+from app.core.database import get_database
+from app.core.config import get_settings
+from app.models.transcription import Transcription
+from app.models.session import UserSession
+from app.models.speaker import Speaker
+from app.services.transcription_service import TranscriptionService
+from app.services.diarization_service import DiarizationService
+from app.services.export_service import ExportService
+from app.services.audio_processor import AudioProcessor
+from app.services.queue_service import get_queue_service
+from app.utils.exceptions import (
     SecureTranscribeError,
     ValidationError,
     FileUploadError,
@@ -38,7 +38,7 @@ from ..utils.exceptions import (
     DiarizationError,
     ExportError,
 )
-from ..utils.helpers import (
+from app.utils.helpers import (
     generate_unique_id,
     sanitize_filename,
     ensure_directory_exists,

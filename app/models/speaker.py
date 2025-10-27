@@ -11,7 +11,7 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Boolean, 
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 
-from ..core.database import Base
+from app.core.database import Base
 
 logger = logging.getLogger(__name__)
 

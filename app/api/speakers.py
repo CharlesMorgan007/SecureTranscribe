@@ -14,17 +14,17 @@ from fastapi import (
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
-from ..core.database import get_database
-from ..models.speaker import Speaker
-from ..models.session import UserSession
-from ..services.speaker_service import SpeakerService
-from ..services.audio_processor import AudioProcessor
-from ..utils.exceptions import (
+from app.core.database import get_database
+from app.models.speaker import Speaker
+from app.models.session import UserSession
+from app.services.speaker_service import SpeakerService
+from app.services.audio_processor import AudioProcessor
+from app.utils.exceptions import (
     SecureTranscribeError,
     ValidationError,
     SpeakerError,
 )
-from .transcription import get_current_session
+from app.api.transcription import get_current_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -33,8 +33,8 @@ router = APIRouter()
 # Pydantic models for request/response
 class SpeakerCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    gender: Optional[str] = Field(None, regex="^(male|female|unknown)$")
-    age_range: Optional[str] = Field(None, regex="^(child|young_adult|adult|senior)$")
+    gender: Optional[str] = Field(None, pattern="^(male|female|unknown)$")
+    age_range: Optional[str] = Field(None, pattern="^(child|young_adult|adult|senior)$")
     language: str = Field(default="en", max_length=10)
     accent: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = Field(None, max_length=1000)
@@ -42,8 +42,8 @@ class SpeakerCreate(BaseModel):
 
 class SpeakerUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
-    gender: Optional[str] = Field(None, regex="^(male|female|unknown)$")
-    age_range: Optional[str] = Field(None, regex="^(child|young_adult|adult|senior)$")
+    gender: Optional[str] = Field(None, pattern="^(male|female|unknown)$")
+    age_range: Optional[str] = Field(None, pattern="^(child|young_adult|adult|senior)$")
     language: Optional[str] = Field(None, max_length=10)
     accent: Optional[str] = Field(None, max_length=100)
     description: Optional[str] = Field(None, max_length=1000)

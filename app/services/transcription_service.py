@@ -13,11 +13,11 @@ import torch
 from faster_whisper import WhisperModel
 import librosa
 
-from ..core.config import get_settings, AUDIO_SETTINGS
-from ..core.database import get_database
-from ..models.transcription import Transcription
-from ..utils.exceptions import TranscriptionError
-from .audio_processor import AudioProcessor
+from app.core.config import get_settings, AUDIO_SETTINGS
+from app.core.database import get_database
+from app.models.transcription import Transcription
+from app.utils.exceptions import TranscriptionError
+from app.services.audio_processor import AudioProcessor
 
 logger = logging.getLogger(__name__)
 
