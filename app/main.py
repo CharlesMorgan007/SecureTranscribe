@@ -40,9 +40,12 @@ app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 logs_dir = os.path.join(app_root, "logs")
 os.makedirs(logs_dir, exist_ok=True)
 
-# Configure logging
+# Load settings first
+settings = get_settings()
+
+# Configure logging using settings
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, settings.log_level),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler(os.path.join(logs_dir, "securetranscribe.log")),
@@ -51,8 +54,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-settings = get_settings()
 
 
 @asynccontextmanager
