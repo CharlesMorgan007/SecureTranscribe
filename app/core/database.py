@@ -60,10 +60,6 @@ def init_database() -> None:
         create_database_engine()
 
     # Import all models to ensure they're registered with Base
-    from app.models.speaker import Speaker
-    from app.models.transcription import Transcription
-    from app.models.session import UserSession
-    from app.models.processing_queue import ProcessingQueue
 
     # Check and repair database if needed
     if check_and_repair_database():
@@ -135,6 +131,26 @@ def get_database() -> Generator[Session, None, None]:
     except Exception as e:
         logger.error(f"Database session error: {e}")
         db.rollback()
+
+
+def get_database_manager() -> DatabaseManager:
+    """Get database manager for external use."""
+    return DatabaseManager()
+
+
+def refresh_database_sessions():
+    """Refresh all database sessions to clear cache."""
+    if SessionLocal:
+        SessionLocal.remove()
+
+def get_database_manager():
+"""Get database manager for external use."""
+return DatabaseManager()
+
+def refresh_database_sessions():
+"""Refresh all database sessions to clear cache."""
+if SessionLocal:
+    SessionLocal.remove()
         raise
     finally:
         db.close()

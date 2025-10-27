@@ -21,7 +21,7 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.core.database import get_database
+from app.core.database import get_database_manager
 from app.core.config import get_settings
 from app.models.transcription import Transcription
 from app.models.session import UserSession
@@ -31,18 +31,7 @@ from app.services.transcription_service import TranscriptionService
 from app.services.diarization_service import DiarizationService
 from app.services.export_service import ExportService
 from app.services.audio_processor import AudioProcessor
-from app.services.queue_service import get_queue_service
-from app.utils.exceptions import (
-    SecureTranscribeError,
-    ValidationError,
-    FileUploadError,
-    TranscriptionError,
-    DiarizationError,
-    ExportError,
-)
-from app.utils.helpers import (
-    generate_unique_id,
-    sanitize_filename,
+
     ensure_directory_exists,
     safe_remove_file,
     format_file_size,
@@ -233,6 +222,11 @@ async def start_transcription(
 
         # Submit to queue
         queue_service = get_queue_service()
+
+        # Small delay to ensure transcription is committed to database
+        # before queue processor picks it up
+        time.sleep(0.1)  # 100ms delay
+
         job_id = queue_service.submit_job(
             session_id=user_session.session_id,
             file_path=transcription.file_path,
@@ -242,6 +236,11 @@ async def start_transcription(
             priority=5,  # Default priority
             processing_options={"language": language} if language else {},
         )
+
+        # Ensure database session is committed and refresh queue service
+        # to prevent "Transcription not found" error
+        db.commit()
+        db.expire_all()
 
         # Update user session
         user_session.set_current_transcription(transcription.id)
