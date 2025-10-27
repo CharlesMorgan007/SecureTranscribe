@@ -65,9 +65,62 @@ def init_database() -> None:
     from app.models.session import UserSession
     from app.models.processing_queue import ProcessingQueue
 
+    # Check and repair database if needed
+    if check_and_repair_database():
+        logger.info("Database was repaired, reinitializing tables...")
+
     # Create all tables
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables created successfully")
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        if "tuple index out of range" in str(e):
+            logger.warning(
+                "Schema inconsistency during table creation, dropping and recreating..."
+            )
+            engine.dispose()
+            Base.metadata.drop_all(bind=engine)
+            Base.metadata.create_all(bind=engine)
+            logger.info("Database tables recreated successfully")
+        else:
+            raise
+
+
+def check_and_repair_database() -> bool:
+    """
+    Check database integrity and repair if needed.
+    Returns True if repair was performed.
+    """
+    try:
+        # Try to access a sample UserSession row
+        with engine.connect() as conn:
+            result = conn.execute("SELECT COUNT(*) FROM user_sessions LIMIT 1")
+            result.fetchone()
+        return False
+    except Exception as e:
+        if "tuple index out of range" in str(e) or "no such table" in str(e).lower():
+            logger.warning("Database corruption detected, performing repair...")
+            try:
+                # Backup existing data if possible
+                backup_db_file = "securetranscribe_backup.db"
+                import shutil
+                if os.path.exists("securetranscribe.db"):
+                    shutil.copy2("securetranscribe.db", backup_db_file)
+                    logger.info(f"Created database backup: {backup_db_file}")
+
+                # Reset database
+                engine.dispose()
+                Base.metadata.drop_all(bind=engine)
+                Base.metadata.create_all(bind=engine)
+                logger.info("Database has been reset successfully")
+                return True
+            except Exception as repair_error:
+                logger.error(f"Failed to repair database: {repair_error}")
+                return False
+        return False
+
+
+def get_database() -> Generator[Session, None, None]:
 
 
 def get_database() -> Generator[Session, None, None]:
