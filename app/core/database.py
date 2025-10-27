@@ -11,6 +11,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 from typing import Generator
 
+from app.utils.exceptions import SecureTranscribeError
 from .config import get_settings, DATABASE_SETTINGS
 
 logger = logging.getLogger(__name__)
@@ -131,28 +132,7 @@ def get_database() -> Generator[Session, None, None]:
     except Exception as e:
         logger.error(f"Database session error: {e}")
         db.rollback()
-
-
-def get_database_manager() -> DatabaseManager:
-    """Get database manager for external use."""
-    return DatabaseManager()
-
-
-def refresh_database_sessions():
-    """Refresh all database sessions to clear cache."""
-    if SessionLocal:
-        SessionLocal.remove()
-
-
-def get_database_manager():
-    """Get database manager for external use."""
-    return DatabaseManager()
-
-
-def refresh_database_sessions():
-    """Refresh all database sessions to clear cache."""
-    if SessionLocal:
-        SessionLocal.remove()
+        raise
 
 
 def close_database() -> None:
@@ -212,9 +192,20 @@ class DatabaseManager:
 db_manager = DatabaseManager()
 
 
+def get_database_manager() -> DatabaseManager:
+    """Get database manager for external use."""
+    return db_manager
+
+
 def get_db_manager() -> DatabaseManager:
     """Get the global database manager instance."""
     return db_manager
+
+
+def refresh_database_sessions():
+    """Refresh all database sessions to clear cache."""
+    if SessionLocal:
+        SessionLocal.remove()
 
 
 # Utility functions for common database operations

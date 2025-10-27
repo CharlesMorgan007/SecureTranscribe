@@ -13,7 +13,11 @@ import threading
 import time
 
 from app.core.config import get_settings
+from app.core.database import get_database, get_database_manager
+from app.utils.exceptions import QueueError
 
+from app.models.processing_queue import ProcessingQueue
+from app.models.transcription import Transcription
 from app.services.transcription_service import TranscriptionService
 from app.services.diarization_service import DiarizationService
 
@@ -41,6 +45,9 @@ class QueueService:
         self.is_running = False
         self.queue_thread = None
         self.shutdown_event = threading.Event()
+
+        # Database manager
+        self.db_manager = get_database_manager()
 
         # Services
         self.transcription_service = None
@@ -134,7 +141,7 @@ class QueueService:
         """
         try:
             # Check queue capacity
-            with self.db_manager.get_database() as db:
+            with self.db_manager.get_session() as db:
                 queued_count = (
                     db.query(ProcessingQueue)
                     .filter(ProcessingQueue.status == "queued")
@@ -155,6 +162,7 @@ class QueueService:
                     file_path=file_path,
                     file_size=file_size,
                     file_duration=file_duration,
+                    transcription_id=transcription_id,
                     processing_options=processing_options,
                     priority=priority,
                 )
@@ -172,7 +180,7 @@ class QueueService:
     def get_queue_status(self) -> Dict[str, Any]:
         """Get current queue status."""
         try:
-            with self.db_manager.get_database() as db:
+            with self.db_manager.get_session() as db:
                 stats = ProcessingQueue.get_queue_statistics(db)
 
                 # Add active job information
@@ -189,7 +197,7 @@ class QueueService:
     def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Get status of a specific job."""
         try:
-            with self.db_manager.get_database() as db:
+            with self.db_manager.get_session() as db:
                 job = (
                     db.query(ProcessingQueue)
                     .filter(ProcessingQueue.job_id == job_id)
@@ -246,7 +254,7 @@ class QueueService:
         while not self.shutdown_event.is_set():
             try:
                 # Get next job
-                with self.db_manager.get_database() as db:
+                with self.db_manager.get_session() as db:
                     job = ProcessingQueue.get_next_job(db)
 
                     if job:
@@ -313,7 +321,6 @@ class QueueService:
                 def progress_callback(percentage: float, step: str) -> None:
                     job.update_progress(percentage, step)
                     transcription.update_progress(percentage, step)
-                    db.commit()
 
                 # Step 1: Transcription (40% of progress)
                 progress_callback(0, "Starting transcription")
@@ -369,7 +376,7 @@ class QueueService:
                 del self.active_jobs[job_id]
 
             # Update job status in database
-            with self.db_manager.get_database() as db:
+            with self.db_manager.get_session() as db:
                 job = (
                     db.query(ProcessingQueue)
                     .filter(ProcessingQueue.job_id == job_id)
@@ -379,7 +386,7 @@ class QueueService:
                 if job:
                     try:
                         result = future.result()
-                        job.mark_as_completed()
+                        job.mark_as_completed(result.get("transcription_id"))
 
                         # Update transcription
                         transcription = (
@@ -403,7 +410,7 @@ class QueueService:
     def _mark_job_failed(self, job: ProcessingQueue, error_message: str) -> None:
         """Mark job as failed."""
         try:
-            with self.db_manager.get_database() as db:
+            with self.db_manager.get_session() as db:
                 job.mark_as_failed(error_message)
 
                 # Update transcription
@@ -414,7 +421,8 @@ class QueueService:
                 )
                 if transcription:
                     transcription.mark_as_failed(error_message)
-                    db.commit()
+
+                db.commit()
 
         except Exception as e:
             logger.error(f"Failed to mark job as failed: {e}")
@@ -463,7 +471,7 @@ class QueueService:
     def cleanup_completed_jobs(self, hours_old: int = 24) -> int:
         """Clean up old completed jobs."""
         try:
-            with self.db_manager.get_database() as db:
+            with self.db_manager.get_session() as db:
                 return ProcessingQueue.cleanup_completed_jobs(db, hours_old)
 
         except Exception as e:

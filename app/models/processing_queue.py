@@ -334,6 +334,7 @@ class ProcessingQueue(Base):
         file_path: str,
         file_size: int,
         file_duration: float,
+        transcription_id: Optional[int] = None,
         processing_options: Optional[Dict] = None,
         priority: int = 5,
     ) -> "ProcessingQueue":
@@ -344,6 +345,7 @@ class ProcessingQueue(Base):
             file_path=file_path,
             file_size=file_size,
             file_duration=file_duration,
+            transcription_id=transcription_id,
             processing_options=processing_options or {},
             priority=priority,
         )

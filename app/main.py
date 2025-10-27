@@ -20,6 +20,7 @@ from starlette.status import (
     HTTP_404_NOT_FOUND,
     HTTP_429_TOO_MANY_REQUESTS,
 )
+from sqlalchemy import text
 import uvicorn
 
 # Add app to path for imports
@@ -155,7 +156,7 @@ async def health_check():
     try:
         # Check database connection
         with next(get_database()) as db:
-            db.execute("SELECT 1")
+            db.execute(text("SELECT 1"))
 
         # Check queue service
         queue_service = get_queue_service()
@@ -163,7 +164,6 @@ async def health_check():
 
         return {
             "status": "healthy",
-            "timestamp": settings.get_settings().created_at,
             "queue_service": queue_status,
             "version": "1.0.0",
         }

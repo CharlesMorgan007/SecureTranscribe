@@ -15,6 +15,7 @@ sys.modules["pydantic_settings"] = MagicMock()
 sys.modules["pydantic"] = MagicMock()
 sys.modules["python-dotenv"] = MagicMock()
 
+
 # Create mock settings that doesn't require actual dependencies
 class MockSettings:
     """Mock configuration settings."""
@@ -22,7 +23,9 @@ class MockSettings:
     def __init__(self):
         self.app_name = "SecureTranscribe"
         self.app_version = "1.0.0"
-        self.app_description = "Secure speech-to-text transcription with speaker diarization"
+        self.app_description = (
+            "Secure speech-to-text transcription with speaker diarization"
+        )
         self.debug = False
         self.secret_key = "test-secret-key"
         self.cors_origins = ["http://localhost:3000", "http://localhost:8000"]
@@ -300,9 +303,18 @@ class TestConfig:
 
         # Check all major categories are present
         required_categories = [
-            "app_name", "app_version", "debug", "max_file_size",
-            "supported_formats", "sample_rate", "device", "upload_dir",
-            "session_timeout", "log_level", "enable_metrics", "enable_cors"
+            "app_name",
+            "app_version",
+            "debug",
+            "max_file_size",
+            "supported_formats",
+            "sample_rate",
+            "device",
+            "upload_dir",
+            "session_timeout",
+            "log_level",
+            "enable_metrics",
+            "enable_cors",
         ]
 
         for category in required_categories:
@@ -313,7 +325,10 @@ class TestConfig:
         settings = MockSettings()
 
         # File size should be reasonable
-        assert settings.max_file_size > settings.min_clip_duration * settings.sample_rate * 2
+        assert (
+            settings.max_file_size
+            > settings.min_clip_duration * settings.sample_rate * 2
+        )
 
         # Sample rate should be standard for speech
         assert settings.sample_rate in [8000, 16000, 22050, 44100, 48000]
@@ -358,8 +373,13 @@ class TestConfig:
 
         # All boolean settings should have values
         boolean_settings = [
-            "debug", "enable_metrics", "enable_cors", "trusted_hosts",
-            "rate_limit_enabled", "enable_auth", "enable_https"
+            "debug",
+            "enable_metrics",
+            "enable_cors",
+            "trusted_hosts",
+            "rate_limit_enabled",
+            "enable_auth",
+            "enable_https",
         ]
 
         config_dict = settings.to_dict()
@@ -370,6 +390,3 @@ class TestConfig:
 
 if __name__ == "__main__":
     pytest.main([__file__])
-```
-
-Now let me run this test to verify it works:

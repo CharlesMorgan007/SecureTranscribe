@@ -21,8 +21,9 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.core.database import get_database_manager
+from app.core.database import get_database_manager, get_database
 from app.core.config import get_settings
+from app.utils.exceptions import SecureTranscribeError, FileUploadError
 from app.models.transcription import Transcription
 from app.models.session import UserSession
 from app.models.speaker import Speaker
@@ -31,11 +32,15 @@ from app.services.transcription_service import TranscriptionService
 from app.services.diarization_service import DiarizationService
 from app.services.export_service import ExportService
 from app.services.audio_processor import AudioProcessor
+from app.services.queue_service import get_queue_service
 
+from app.utils.helpers import (
     ensure_directory_exists,
     safe_remove_file,
     format_file_size,
     format_duration,
+    sanitize_filename,
+    generate_unique_id,
 )
 
 logger = logging.getLogger(__name__)

@@ -40,12 +40,16 @@ class TranscriptionService:
 
     def _get_device(self) -> str:
         """Determine the best device for Whisper processing."""
-        if self.settings.use_gpu and torch.cuda.is_available():
-            return "cuda"
-        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            return "mps"
-        else:
-            return "cpu"
+        # Temporarily force CPU to avoid MPS compatibility issues
+        return "cpu"
+
+        # Original device detection logic (commented out for now)
+        # if self.settings.use_gpu and torch.cuda.is_available():
+        #     return "cuda"
+        # elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        #     return "mps"
+        # else:
+        #     return "cpu"
 
     def _load_model(self) -> None:
         """Load Whisper model with appropriate configuration."""
