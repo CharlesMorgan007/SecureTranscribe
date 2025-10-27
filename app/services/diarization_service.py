@@ -34,8 +34,10 @@ class MockDiarizationPipeline:
         self,
         audio_dict,
         num_speakers=None,
-        min_duration=None,
-        min_duration_off=None,
+        min_speakers=None,
+        max_speakers=None,
+        return_embeddings=False,
+        hook=None,
     ):
         """Mock diarization that returns simple speaker segments."""
         from pyannote.core import Annotation, Segment
@@ -230,12 +232,13 @@ class DiarizationService:
             if progress_callback:
                 progress_callback(30, "Identifying speakers")
 
-            # Perform diarization
+            # Perform diarization with correct pyannote.audio API parameters
+            # Note: min_duration is not supported by pyannote.audio, will filter in post-processing
             diarization = self.pipeline(
                 {"waveform": waveform, "sample_rate": sample_rate},
                 num_speakers=None,  # Auto-detect
-                min_duration=self.min_speaker_duration,
-                min_duration_off=0.5,
+                min_speakers=1,
+                max_speakers=self.settings.max_speakers,
             )
 
             if progress_callback:
