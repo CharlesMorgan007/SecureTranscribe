@@ -184,7 +184,7 @@ class ProcessingQueue(Base):
 
         logger.info(f"Started processing job {self.job_id}")
 
-    def mark_as_completed(self) -> None:
+    def mark_as_completed(self, transcription_id: Optional[int] = None) -> None:
         """Mark job as completed."""
         self.status = "completed"
         self.completed_at = datetime.utcnow()
@@ -193,6 +193,10 @@ class ProcessingQueue(Base):
 
         if self.started_at:
             self.actual_duration = self.processing_time
+
+        # Update transcription_id if provided
+        if transcription_id is not None:
+            self.transcription_id = transcription_id
 
         logger.info(f"Completed job {self.job_id} in {self.actual_duration} seconds")
 
