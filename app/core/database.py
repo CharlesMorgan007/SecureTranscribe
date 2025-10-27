@@ -54,6 +54,12 @@ def create_database_engine() -> None:
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     logger.info(f"Database engine created for: {database_url}")
 
+    # Verify engine was created successfully
+    if engine is None:
+        raise RuntimeError("Failed to create database engine")
+    if SessionLocal is None:
+        raise RuntimeError("Failed to create SessionLocal")
+
 
 def init_database() -> None:
     """Initialize database tables and create required directories."""
@@ -61,6 +67,12 @@ def init_database() -> None:
         create_database_engine()
 
     # Import all models to ensure they're registered with Base
+    from app.models import (
+        Speaker,
+        Transcription,
+        UserSession,
+        ProcessingQueue,
+    )
 
     # Check and repair database if needed
     if check_and_repair_database():
@@ -123,8 +135,12 @@ def get_database() -> Generator[Session, None, None]:
     Database dependency for FastAPI.
     Provides a database session for each request.
     """
-    if SessionLocal is None:
+    global SessionLocal, engine
+
+    if SessionLocal is None or engine is None:
         create_database_engine()
+        if SessionLocal is None or engine is None:
+            raise RuntimeError("Database components not properly initialized")
 
     db = SessionLocal()
     try:
@@ -133,6 +149,8 @@ def get_database() -> Generator[Session, None, None]:
         logger.error(f"Database session error: {e}")
         db.rollback()
         raise
+    finally:
+        db.close()
 
 
 def close_database() -> None:

@@ -59,6 +59,17 @@ class TranscriptionService:
         try:
             logger.info(f"Loading Whisper model: {self.model_size} on {self.device}")
 
+            # Fix tqdm compatibility issues
+            import tqdm
+
+            # Ensure tqdm has the required _lock attribute
+            if not hasattr(tqdm.tqdm, "_lock"):
+                from threading import Lock
+
+                tqdm.tqdm._lock = Lock()
+            if not hasattr(tqdm.tqdm, "_instances"):
+                tqdm.tqdm._instances = set()
+
             # Configure model based on device
             compute_type = "float16" if self.device == "cuda" else "float32"
 
@@ -72,6 +83,67 @@ class TranscriptionService:
 
         except Exception as e:
             logger.error(f"Failed to load Whisper model: {e}")
+
+            # Try fallback configuration if it's a tqdm-related error
+            if "disabled_tqdm" in str(e) or "_lock" in str(e):
+                logger.info(
+                    "Attempting fallback model loading with alternative tqdm configuration..."
+                )
+                try:
+                    # Try importing and patching tqdm differently
+                    import tqdm.auto as tqdm_auto
+                    import sys
+
+                    # Create a simple tqdm patch
+                    class SimpleTqdm:
+                        def __init__(self, iterable=None, total=None, **kwargs):
+                            self.iterable = iterable
+                            self.total = total
+                            self.n = 0
+
+                        def __iter__(self):
+                            if self.iterable:
+                                for item in self.iterable:
+                                    yield item
+                                    self.update(1)
+                            else:
+                                for i in range(self.total):
+                                    yield i
+                                    self.update(1)
+
+                        def update(self, n=1):
+                            self.n += n
+
+                        def close(self):
+                            pass
+
+                        def __enter__(self):
+                            return self
+
+                        def __exit__(self, *args):
+                            self.close()
+
+                    # Monkey patch tqdm
+                    tqdm_auto.tqdm = SimpleTqdm
+                    tqdm.tqdm = SimpleTqdm
+
+                    # Try loading model again
+                    self.model = WhisperModel(
+                        self.model_size,
+                        device=self.device,
+                        compute_type=compute_type,
+                    )
+
+                    logger.info(
+                        f"Whisper model loaded successfully with fallback on {self.device}"
+                    )
+                    return
+
+                except Exception as fallback_error:
+                    logger.error(
+                        f"Fallback model loading also failed: {fallback_error}"
+                    )
+
             raise TranscriptionError(f"Failed to load transcription model: {str(e)}")
 
     def transcribe_audio(
