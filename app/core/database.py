@@ -104,6 +104,7 @@ def check_and_repair_database() -> bool:
                 # Backup existing data if possible
                 backup_db_file = "securetranscribe_backup.db"
                 import shutil
+
                 if os.path.exists("securetranscribe.db"):
                     shutil.copy2("securetranscribe.db", backup_db_file)
                     logger.info(f"Created database backup: {backup_db_file}")
@@ -118,9 +119,6 @@ def check_and_repair_database() -> bool:
                 logger.error(f"Failed to repair database: {repair_error}")
                 return False
         return False
-
-
-def get_database() -> Generator[Session, None, None]:
 
 
 def get_database() -> Generator[Session, None, None]:
