@@ -10,7 +10,6 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 from typing import Generator
-
 from app.utils.exceptions import SecureTranscribeError
 from .config import get_settings, DATABASE_SETTINGS
 
@@ -63,8 +62,14 @@ def create_database_engine() -> None:
 
 def init_database() -> None:
     """Initialize database tables and create required directories."""
+    global engine, SessionLocal
+
+    # Create engine if needed
     if engine is None:
         create_database_engine()
+
+    if engine is None:
+        raise RuntimeError("Failed to create database engine")
 
     # Import all models to ensure they're registered with Base
     from app.models import (
@@ -74,60 +79,37 @@ def init_database() -> None:
         ProcessingQueue,
     )
 
-    # Check and repair database if needed
-    if check_and_repair_database():
-        logger.info("Database was repaired, reinitializing tables...")
-
-    # Create all tables
+    # Create tables with error handling
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
     except Exception as e:
-        if "tuple index out of range" in str(e):
-            logger.warning(
-                "Schema inconsistency during table creation, dropping and recreating..."
-            )
-            engine.dispose()
-            Base.metadata.drop_all(bind=engine)
-            Base.metadata.create_all(bind=engine)
-            logger.info("Database tables recreated successfully")
-        else:
-            raise
-
-
-def check_and_repair_database() -> bool:
-    """
-    Check database integrity and repair if needed.
-    Returns True if repair was performed.
-    """
-    try:
-        # Try to access a sample UserSession row
-        with engine.connect() as conn:
-            result = conn.execute("SELECT COUNT(*) FROM user_sessions LIMIT 1")
-            result.fetchone()
-        return False
-    except Exception as e:
         if "tuple index out of range" in str(e) or "no such table" in str(e).lower():
-            logger.warning("Database corruption detected, performing repair...")
+            logger.warning(
+                "Database schema inconsistency detected, performing complete reset..."
+            )
             try:
-                # Backup existing data if possible
-                backup_db_file = "securetranscribe_backup.db"
+                # Backup existing database if possible
                 import shutil
+                import datetime
 
-                if os.path.exists("securetranscribe.db"):
-                    shutil.copy2("securetranscribe.db", backup_db_file)
-                    logger.info(f"Created database backup: {backup_db_file}")
+                db_path = "securetranscribe.db"
+                if os.path.exists(db_path):
+                    backup_path = f"securetranscribe_backup_{int(datetime.datetime.now().timestamp())}.db"
+                    shutil.copy2(db_path, backup_path)
+                    logger.info(f"Created database backup: {backup_path}")
 
-                # Reset database
+                # Dispose and recreate database
                 engine.dispose()
                 Base.metadata.drop_all(bind=engine)
                 Base.metadata.create_all(bind=engine)
-                logger.info("Database has been reset successfully")
-                return True
+                logger.info("Database reset completed successfully")
             except Exception as repair_error:
-                logger.error(f"Failed to repair database: {repair_error}")
-                return False
-        return False
+                logger.error(f"Database repair failed: {repair_error}")
+                raise RuntimeError(f"Failed to repair database: {repair_error}")
+        else:
+            logger.error(f"Database initialization failed: {e}")
+            raise RuntimeError(f"Failed to initialize database: {e}")
 
 
 def get_database() -> Generator[Session, None, None]:
@@ -139,8 +121,9 @@ def get_database() -> Generator[Session, None, None]:
 
     if SessionLocal is None or engine is None:
         create_database_engine()
-        if SessionLocal is None or engine is None:
-            raise RuntimeError("Database components not properly initialized")
+
+    if SessionLocal is None or engine is None:
+        raise RuntimeError("Database components not properly initialized")
 
     db = SessionLocal()
     try:
@@ -148,9 +131,14 @@ def get_database() -> Generator[Session, None, None]:
     except Exception as e:
         logger.error(f"Database session error: {e}")
         db.rollback()
+        # Auto-reset database on schema corruption errors
+        if "tuple index out of range" in str(e):
+            logger.error(f"Database schema corruption detected: {e}")
+            init_database()
+            raise RuntimeError(
+                "Database was reset due to schema corruption. Please retry request."
+            )
         raise
-    finally:
-        db.close()
 
 
 def close_database() -> None:
@@ -162,6 +150,63 @@ def close_database() -> None:
         logger.info("Database connections closed")
 
 
+# Utility functions for common database operations
+def execute_raw_sql(sql: str, params: dict = None) -> list:
+    """Execute raw SQL query and return results."""
+    global SessionLocal, engine
+
+    if SessionLocal is None or engine is None:
+        create_database_engine()
+
+    session = SessionLocal()
+    try:
+        result = session.execute(sql, params or {})
+        return result.fetchall()
+    finally:
+        session.close()
+
+
+def backup_database(backup_path: str) -> bool:
+    """Create a backup of the SQLite database."""
+    global engine
+
+    if not get_settings().database_url.startswith("sqlite"):
+        logger.warning("Database backup only supported for SQLite")
+        return False
+
+    try:
+        import shutil
+
+        db_path = get_settings().database_url.replace("sqlite:///", "")
+        shutil.copy2(db_path, backup_path)
+        logger.info(f"Database backed up to: {backup_path}")
+        return True
+    except Exception as e:
+        logger.error(f"Database backup failed: {e}")
+        return False
+
+
+def restore_database(backup_path: str) -> bool:
+    """Restore database from backup."""
+    global engine
+
+    if not get_settings().database_url.startswith("sqlite"):
+        logger.warning("Database restore only supported for SQLite")
+        return False
+
+    try:
+        import shutil
+
+        db_path = get_settings().database_url.replace("sqlite:///", "")
+        shutil.copy2(backup_path, db_path)
+        logger.info(f"Database restored from: {backup_path}")
+        return True
+    except Exception as e:
+        logger.error(f"Database restore failed: {e}")
+        return False
+
+
+# Simple database manager for easier access
 class DatabaseManager:
     """High-level database management class."""
 
@@ -170,25 +215,19 @@ class DatabaseManager:
         self.SessionLocal = None
         self._initialize()
 
-    def _initialize(self) -> None:
+    def _initialize(self):
         """Initialize database connection."""
-        settings = get_settings()
-        self.engine = create_engine(
-            settings.database_url,
-            connect_args={"check_same_thread": False}
-            if settings.database_url.startswith("sqlite")
-            else {},
-            poolclass=StaticPool
-            if settings.database_url.startswith("sqlite")
-            else None,
-        )
-        self.SessionLocal = sessionmaker(
-            autocommit=False, autoflush=False, bind=self.engine
-        )
+        global engine, SessionLocal
+        create_database_engine()
+        self.engine = engine
+        self.SessionLocal = SessionLocal
 
-    def create_tables(self) -> None:
+    def create_tables(self):
         """Create all database tables."""
-        Base.metadata.create_all(bind=self.engine)
+        global engine
+        if engine:
+            Base.metadata.create_all(bind=engine)
+            logger.info("Database tables created successfully")
 
     def get_session(self) -> Session:
         """Get a new database session."""
@@ -222,57 +261,6 @@ def get_db_manager() -> DatabaseManager:
 
 def refresh_database_sessions():
     """Refresh all database sessions to clear cache."""
+    global SessionLocal
     if SessionLocal:
         SessionLocal.remove()
-
-
-# Utility functions for common database operations
-def execute_raw_sql(sql: str, params: dict = None) -> list:
-    """Execute raw SQL query and return results."""
-    session = db_manager.get_session()
-    try:
-        result = session.execute(sql, params or {})
-        return result.fetchall()
-    finally:
-        session.close()
-
-
-def backup_database(backup_path: str) -> bool:
-    """Create a backup of the SQLite database."""
-    if not get_settings().database_url.startswith("sqlite"):
-        logger.warning("Database backup only supported for SQLite")
-        return False
-
-    try:
-        import shutil
-
-        db_path = get_settings().database_url.replace("sqlite:///", "")
-        shutil.copy2(db_path, backup_path)
-        logger.info(f"Database backed up to: {backup_path}")
-        return True
-    except Exception as e:
-        logger.error(f"Database backup failed: {e}")
-        return False
-
-
-def restore_database(backup_path: str) -> bool:
-    """Restore database from backup."""
-    if not get_settings().database_url.startswith("sqlite"):
-        logger.warning("Database restore only supported for SQLite")
-        return False
-
-    try:
-        import shutil
-
-        db_path = get_settings().database_url.replace("sqlite:///", "")
-        shutil.copy2(backup_path, db_path)
-        logger.info(f"Database restored from: {backup_path}")
-        return True
-    except Exception as e:
-        logger.error(f"Database restore failed: {e}")
-        return False
-
-
-# Database initialization should be called explicitly, not on import
-# if not get_settings().test_mode:
-#     init_database()
