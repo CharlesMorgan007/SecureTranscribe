@@ -273,13 +273,13 @@ class QueueService:
                                 transcription.mark_as_started()
 
                             db.commit()
-                        return job
+                        return job.job_id if job else None
 
-                job = self.db_manager.execute_with_retry(get_next_job_operation)
+                job_id = self.db_manager.execute_with_retry(get_next_job_operation)
 
-                if job:
-                    # Submit job for processing
-                    self._process_job(job)
+                if job_id:
+                    # Submit job for processing - pass only job_id to avoid session binding issues
+                    self._process_job(job_id)
                 else:
                     # No jobs available, wait
                     self.shutdown_event.wait(1)
@@ -290,27 +290,25 @@ class QueueService:
 
         logger.info("Queue processor stopped")
 
-    def _process_job(self, job: ProcessingQueue) -> None:
+    def _process_job(self, job_id: str) -> None:
         """Process a job asynchronously."""
         try:
             # Job is already marked as started in _queue_processor
             # Submit to thread pool
-            future = self.executor.submit(self._execute_job, job)
-            self.active_jobs[job.job_id] = future
+            future = self.executor.submit(self._execute_job_with_id, job_id)
+            self.active_jobs[job_id] = future
 
             # Add completion callback
-            future.add_done_callback(lambda f: self._job_completed(job.job_id, f))
+            future.add_done_callback(lambda f: self._job_completed(job_id, f))
 
-            logger.info(f"Submitted job {job.job_id} for processing")
+            logger.info(f"Submitted job {job_id} for processing")
 
         except Exception as e:
-            logger.error(f"Failed to process job {job.job_id}: {e}")
-            self._mark_job_failed(job.job_id, str(e))
+            logger.error(f"Failed to process job {job_id}: {e}")
+            self._mark_job_failed(job_id, str(e))
 
-    def _execute_job(self, job: ProcessingQueue) -> Dict[str, Any]:
+    def _execute_job_with_id(self, job_id: str) -> Dict[str, Any]:
         """Execute the actual transcription and diarization."""
-        # Store job_id to refetch job in proper session context
-        job_id = job.job_id
 
         def execute_job_operation():
             with self.db_manager.write_lock():
