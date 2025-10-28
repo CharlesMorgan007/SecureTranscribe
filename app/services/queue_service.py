@@ -485,7 +485,7 @@ class QueueService:
                         .filter(ProcessingQueue.job_id == job_id)
                         .first()
                     )
-                    if job and not job.is_completed():
+                    if job and not job.is_completed:
                         job.mark_as_failed(error_message)
 
                         # Update transcription

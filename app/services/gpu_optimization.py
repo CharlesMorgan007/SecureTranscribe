@@ -81,7 +81,12 @@ class GPUOptimizer:
             return (cc, memory_gb)
 
         best_device = max(devices, key=device_score)
-        return f"cuda:{best_device['id']}"
+        # For Whisper/faster-whisper compatibility, return just "cuda" for device 0
+        # otherwise include device number for multi-GPU systems
+        if best_device["id"] == 0:
+            return "cuda"
+        else:
+            return f"cuda:{best_device['id']}"
 
     def get_optimal_device(self) -> str:
         """Get the optimal device for processing."""
@@ -103,6 +108,21 @@ class GPUOptimizer:
             "compute_type": "float32",  # Default
             "torch_dtype": torch.float32,
         }
+
+        # Special handling for Whisper/faster-whisper device compatibility
+        if device.startswith("cuda:"):
+            device_id = int(device.split(":")[1])
+            if device_id == 0:
+                params["device"] = "cuda"  # faster-whisper prefers "cuda" not "cuda:0"
+            # For multi-GPU systems, some models may not support specific device IDs
+            # so we provide fallback options
+            elif "whisper" in model_name.lower():
+                params["device"] = "cuda"  # Fallback to default CUDA device
+                logger.warning(
+                    f"Using default CUDA device for {model_name} instead of {device}"
+                )
+
+        logger.info(f"Device optimization for {model_name}: {params}")
 
         if device.startswith("cuda"):
             # CUDA-specific optimizations
@@ -132,6 +152,12 @@ class GPUOptimizer:
             )
             params["torch_dtype"] = torch.float32
             logger.info(f"Using MPS-optimized settings for {model_name}")
+
+        else:
+            logger.warning(f"Unknown device '{device}', using default CPU settings")
+            params["device"] = "cpu"
+            params["compute_type"] = "float32"
+            params["torch_dtype"] = torch.float32
 
         return params
 
@@ -256,6 +282,55 @@ class GPUOptimizer:
             )
 
         logger.info("============================")
+
+    def test_device_compatibility(self, device: str, model_name: str) -> bool:
+        """
+        Test if a device is compatible with specific model.
+
+        Args:
+            device: Device string to test
+            model_name: Name of model (whisper, pyannote, etc.)
+
+        Returns:
+            True if device is compatible, False otherwise
+        """
+        try:
+            if not device or device == "cpu":
+                return True
+
+            if device.startswith("cuda"):
+                import torch
+
+                if not torch.cuda.is_available():
+                    return False
+
+                # Test if we can create a tensor on device
+                try:
+                    test_tensor = torch.randn(1, 10).to(device)
+                    del test_tensor
+                    return True
+                except Exception:
+                    return False
+
+            elif device == "mps":
+                import torch
+
+                if not (
+                    hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+                ):
+                    return False
+                try:
+                    test_tensor = torch.randn(1, 10).to("mps")
+                    del test_tensor
+                    return True
+                except Exception:
+                    return False
+
+            return False
+
+        except Exception as e:
+            logger.warning(f"Device compatibility test failed for {device}: {e}")
+            return False
 
 
 # Global instance for easy access

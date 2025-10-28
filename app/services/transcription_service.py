@@ -84,6 +84,39 @@ class TranscriptionService:
         except Exception as e:
             logger.error(f"Failed to load Whisper model: {e}")
 
+            # Handle CUDA device recognition errors
+            if "unsupported device" in str(e) and self.device.startswith("cuda"):
+                logger.warning(
+                    "CUDA device not recognized by Whisper, trying fallback to CPU"
+                )
+                try:
+                    # Fallback to CPU if CUDA device not supported
+                    self.device = "cpu"
+                    logger.info("Retrying Whisper model loading on CPU")
+
+                    # Get CPU-optimized parameters
+                    cpu_params = self.gpu_optimizer.optimize_model_loading(
+                        "cpu", f"whisper-{self.model_size}"
+                    )
+
+                    self.model = WhisperModel(
+                        self.model_size,
+                        device="cpu",
+                        compute_type="float32",
+                    )
+                    self.whisper_model = self.model_size
+                    self.pyannote_model = "pyannote/speaker-diarization-3.1"
+
+                    logger.warning(
+                        "Whisper model loaded on CPU due to CUDA compatibility issue"
+                    )
+                    return
+                except Exception as fallback_error:
+                    logger.error(f"CPU fallback also failed: {fallback_error}")
+                    raise TranscriptionError(
+                        f"Failed to load Whisper model on both GPU and CPU: {e}"
+                    )
+
             # Try fallback configuration if it's a tqdm-related error
             if "disabled_tqdm" in str(e) or "_lock" in str(e):
                 logger.info(
@@ -127,15 +160,18 @@ class TranscriptionService:
                     tqdm_auto.tqdm = SimpleTqdm
                     tqdm.tqdm = SimpleTqdm
 
-                    # Try loading model again
+                    # Try loading model again with CPU fallback
+                    fallback_device = (
+                        "cpu" if self.device.startswith("cuda") else self.device
+                    )
                     self.model = WhisperModel(
                         self.model_size,
-                        device=self.device,
+                        device=fallback_device,
                         compute_type="float32",
                     )
 
                     logger.info(
-                        f"Whisper model loaded successfully with fallback on {self.device}"
+                        f"Whisper model loaded successfully with fallback on {fallback_device}"
                     )
                     return
 
