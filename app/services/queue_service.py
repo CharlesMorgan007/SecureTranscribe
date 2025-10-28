@@ -305,145 +305,120 @@ class QueueService:
 
         except Exception as e:
             logger.error(f"Failed to process job {job.job_id}: {e}")
-            self._mark_job_failed(job, str(e))
+            self._mark_job_failed(job.job_id, str(e))
 
     def _execute_job(self, job: ProcessingQueue) -> Dict[str, Any]:
         """Execute the actual transcription and diarization."""
-        db = None
-        try:
-            logger.info(f"Starting execution of job {job.job_id}")
+        # Store job_id to refetch job in proper session context
+        job_id = job.job_id
 
-            # Use a single database session for the entire job execution
-            db = next(get_database())
-
-            # Re-fetch the job and transcription in this session
-            job = (
-                db.query(ProcessingQueue)
-                .filter(ProcessingQueue.job_id == job.job_id)
-                .first()
-            )
-            if not job:
-                raise QueueError(f"Job not found: {job.job_id}")
-
-            # Use a single database session for the entire job execution
-            db = next(get_database())
-
-            # Re-fetch the job and transcription in this session
-            job = (
-                db.query(ProcessingQueue)
-                .filter(ProcessingQueue.job_id == job.job_id)
-                .first()
-            )
-            if not job:
-                raise QueueError(f"Job not found: {job.job_id}")
-
-            transcription = (
-                db.query(Transcription)
-                .filter(Transcription.id == job.transcription_id)
-                .first()
-            )
-
-            if not transcription:
-                raise QueueError(f"Transcription not found: {job.transcription_id}")
-
-            # Progress callback
-            def progress_callback(percentage: float, step: str) -> None:
-                job.update_progress(percentage, step)
-                transcription.update_progress(percentage, step)
-                # Commit progress updates immediately to avoid connection issues
-                try:
-                    db.commit()
-                except Exception as commit_error:
-                    logger.warning(f"Failed to commit progress update: {commit_error}")
-                    db.rollback()
-
-            # Step 1: Transcription (40% of progress)
-            progress_callback(0, "Starting transcription")
-            transcription_result = self.transcription_service.transcribe_audio(
-                job.file_path,
-                transcription,
-                db,
-                progress_callback=progress_callback,
-            )
-
-            # Commit after transcription
-            try:
-                db.commit()
-            except Exception as commit_error:
-                logger.error(f"Failed to commit transcription: {commit_error}")
-                db.rollback()
-                raise QueueError(f"Failed to commit transcription: {str(commit_error)}")
-
-            # Step 2: Diarization (40% of progress)
-            progress_callback(40, "Starting speaker diarization")
-            diarization_result = self.diarization_service.diarize_audio(
-                job.file_path,
-                transcription,
-                db,
-                progress_callback=progress_callback,
-            )
-
-            # Commit after diarization
-            try:
-                db.commit()
-            except Exception as commit_error:
-                logger.error(f"Failed to commit diarization: {commit_error}")
-                db.rollback()
-                raise QueueError(f"Failed to commit diarization: {str(commit_error)}")
-
-            # Step 3: Final processing (20% of progress)
-            progress_callback(80, "Finalizing results")
-
-            # Update speaker assignments in transcription
-            if diarization_result.get("speaker_matches"):
-                for segment in transcription.segments or []:
-                    speaker_label = segment.get("speaker", "")
-                    matched_speaker = diarization_result["speaker_matches"].get(
-                        speaker_label
+        def execute_job_operation():
+            with self.db_manager.write_lock():
+                with self.db_manager.get_session() as db:
+                    # Re-fetch the job and transcription in this session context
+                    job = (
+                        db.query(ProcessingQueue)
+                        .filter(ProcessingQueue.job_id == job_id)
+                        .first()
                     )
-                    if matched_speaker:
-                        segment["speaker"] = matched_speaker.name
+                    if not job:
+                        raise QueueError(f"Job not found: {job_id}")
 
-            # Mark job and transcription as completed
-            job.mark_as_completed()
-            transcription.mark_as_completed()
+                    transcription = (
+                        db.query(Transcription)
+                        .filter(Transcription.id == job.transcription_id)
+                        .first()
+                    )
 
-            # Final commit
-            try:
-                db.commit()
-                logger.info(f"Job {job.job_id} committed successfully")
-            except Exception as commit_error:
-                logger.error(f"Failed to commit job completion: {commit_error}")
-                db.rollback()
-                raise QueueError(
-                    f"Failed to commit job completion: {str(commit_error)}"
-                )
+                    if not transcription:
+                        raise QueueError(
+                            f"Transcription not found: {job.transcription_id}"
+                        )
 
-            progress_callback(100, "Completed")
+                    # Progress callback
+                    def progress_callback(percentage: float, step: str) -> None:
+                        job.update_progress(percentage, step)
+                        transcription.update_progress(percentage, step)
+                        # Commit progress updates immediately to avoid connection issues
+                        try:
+                            db.commit()
+                        except Exception as commit_error:
+                            logger.warning(
+                                f"Failed to commit progress update: {commit_error}"
+                            )
+                            db.rollback()
 
-            result = {
-                "transcription": transcription_result,
-                "diarization": diarization_result,
-                "status": "completed",
-            }
+                    # Step 1: Transcription (40% of progress)
+                    progress_callback(0, "Starting transcription")
+                    transcription_result = self.transcription_service.transcribe_audio(
+                        job.file_path,
+                        transcription,
+                        db,
+                        progress_callback=progress_callback,
+                    )
 
-            logger.info(f"Job {job.job_id} completed successfully")
-            return result
+                    # Commit after transcription
+                    try:
+                        db.commit()
+                    except Exception as commit_error:
+                        logger.error(f"Failed to commit transcription: {commit_error}")
+                        db.rollback()
+                        raise QueueError(
+                            f"Failed to commit transcription: {str(commit_error)}"
+                        )
 
-        except Exception as e:
-            if db:
-                try:
-                    db.rollback()
-                except Exception:
-                    pass  # Already in error state
-            logger.error(f"Job execution failed {job.job_id}: {e}")
-            raise QueueError(f"Job execution failed: {str(e)}")
-        finally:
-            if db:
-                try:
-                    db.close()
-                except Exception:
-                    pass
+                    # Step 2: Diarization (40% of progress)
+                    progress_callback(40, "Starting speaker diarization")
+                    diarization_result = self.diarization_service.diarize_audio(
+                        job.file_path,
+                        transcription,
+                        db,
+                        progress_callback=progress_callback,
+                    )
+
+                    # Commit after diarization
+                    try:
+                        db.commit()
+                    except Exception as commit_error:
+                        logger.error(f"Failed to commit diarization: {commit_error}")
+                        db.rollback()
+                        raise QueueError(
+                            f"Failed to commit diarization: {str(commit_error)}"
+                        )
+
+                    # Step 3: Final processing (20% of progress)
+                    progress_callback(80, "Finalizing results")
+
+                    # Update speaker assignments in transcription
+                    if diarization_result.get("speaker_matches"):
+                        for segment in transcription.segments or []:
+                            speaker_label = segment.get("speaker", "")
+                            matched_speaker = diarization_result["speaker_matches"].get(
+                                speaker_label
+                            )
+                            if matched_speaker:
+                                segment["speaker"] = matched_speaker.name
+
+                    # Mark job and transcription as completed
+                    job.mark_as_completed()
+                    transcription.mark_as_completed()
+
+                    # Commit the completion
+                    db.commit()
+                    logger.info(f"Job {job.job_id} committed successfully")
+
+                    progress_callback(100, "Completed")
+
+                    result = {
+                        "transcription": transcription_result,
+                        "diarization": diarization_result,
+                        "status": "completed",
+                    }
+
+                    logger.info(f"Job {job.job_id} completed successfully")
+                    return result
+
+        return self.db_manager.execute_with_retry(execute_job_operation)
 
     def _job_completed(self, job_id: str, future) -> None:
         """Handle job completion."""
@@ -465,7 +440,7 @@ class QueueService:
         except Exception as e:
             logger.error(f"Error handling job completion: {e}")
 
-    def _mark_job_failed(self, job: ProcessingQueue, error_message: str) -> None:
+    def _mark_job_failed(self, job_id: str, error_message: str) -> None:
         """Mark job as failed with thread-safe database access."""
 
         def mark_failed_operation():
@@ -474,7 +449,7 @@ class QueueService:
                     # Re-fetch the job to ensure we have the latest state
                     job = (
                         db.query(ProcessingQueue)
-                        .filter(ProcessingQueue.job_id == job.job_id)
+                        .filter(ProcessingQueue.job_id == job_id)
                         .first()
                     )
                     if job:
@@ -490,16 +465,14 @@ class QueueService:
                             transcription.mark_as_failed(error_message)
 
                         db.commit()
-                        logger.info(f"Job {job.job_id} marked as failed")
+                        logger.info(f"Job {job_id} marked as failed")
                         return True
                     return False
 
         try:
             result = self.db_manager.execute_with_retry(mark_failed_operation)
             if not result:
-                logger.warning(
-                    f"Failed to mark job {job.job_id} as failed - job not found"
-                )
+                logger.warning(f"Failed to mark job {job_id} as failed - job not found")
         except Exception as e:
             logger.error(f"Failed to mark job as failed: {e}")
 
