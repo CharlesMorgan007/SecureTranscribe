@@ -34,6 +34,7 @@ from app.api.transcription import router as transcription_router
 from app.api.speakers import router as speakers_router
 from app.api.sessions import router as sessions_router
 from app.api.queue import router as queue_router
+from app.services.gpu_optimization import initialize_gpu_optimization
 
 # Ensure logs directory exists using absolute path
 app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -75,6 +76,13 @@ async def lifespan(app: FastAPI):
 
     os.makedirs(upload_dir, exist_ok=True)
     os.makedirs(processed_dir, exist_ok=True)
+
+    # Initialize GPU optimization
+    try:
+        gpu_optimizer = initialize_gpu_optimization()
+        logger.info("GPU optimization initialized successfully")
+    except Exception as e:
+        logger.warning(f"GPU optimization initialization failed: {e}")
 
     # Initialize database
     try:

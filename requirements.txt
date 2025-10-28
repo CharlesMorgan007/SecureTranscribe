@@ -25,13 +25,18 @@ soundfile>=0.10.2
 librosa>=0.9.0
 pydub==0.25.1
 
-# ML/AI Dependencies - Compatible versions for Python 3.12+
+# ML/AI Dependencies - Optimized for CUDA acceleration
 numpy>=1.24.0,<2.0.0
-torch>=2.0.0,<2.5.0
-torchaudio>=2.0.0,<2.5.0
+# CUDA-enabled PyTorch (will fallback to CPU if CUDA not available)
+torch>=2.0.0,<2.5.0 --index-url https://download.pytorch.org/whl/cu118
+torchaudio>=2.0.0,<2.5.0 --index-url https://download.pytorch.org/whl/cu118
 faster-whisper==1.0.3
 # Downgraded PyAnnote for NumPy compatibility
 pyannote.audio>=2.0.0
+
+# Additional GPU acceleration packages
+# Note: These packages provide GPU memory management and optimization
+# They will only be used if CUDA is available
 
 
 # Audio Processing
@@ -91,4 +96,6 @@ pydantic_settings
 # 3. For PyAnnote.audio: Set HUGGINGFACE_HUB_TOKEN environment variable
 # 4. Using compatible version ranges to allow pip dependency resolution
 # 5. Python 3.12 recommended for optimal compatibility
-# 6. All packages configured for CPU usage on macOS ARM64
+# 6. CUDA-enabled PyTorch will automatically fallback to CPU if CUDA not available
+# 7. For optimal performance with RTX 4090: ensure CUDA 11.8+ is installed
+# 8. To verify GPU detection: python -c "import torch; print(torch.cuda.is_available())"

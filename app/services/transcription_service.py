@@ -18,6 +18,7 @@ from app.core.database import get_database
 from app.models.transcription import Transcription
 from app.utils.exceptions import TranscriptionError
 from app.services.audio_processor import AudioProcessor
+from app.services.gpu_optimization import get_gpu_optimizer
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class TranscriptionService:
     def __init__(self):
         self.settings = get_settings()
         self.model_size = self.settings.whisper_model_size
+        self.gpu_optimizer = get_gpu_optimizer()
         self.device = self._get_device()
         self.model = None
         self.audio_processor = AudioProcessor()
@@ -39,17 +41,8 @@ class TranscriptionService:
         self.overlap_length = AUDIO_SETTINGS["overlap_length_s"]
 
     def _get_device(self) -> str:
-        """Determine the best device for Whisper processing."""
-        # Temporarily force CPU to avoid MPS compatibility issues
-        return "cpu"
-
-        # Original device detection logic (commented out for now)
-        # if self.settings.use_gpu and torch.cuda.is_available():
-        #     return "cuda"
-        # elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        #     return "mps"
-        # else:
-        #     return "cpu"
+        """Determine the best device for Whisper processing using GPU optimizer."""
+        return self.gpu_optimizer.get_optimal_device()
 
     def _load_model(self) -> None:
         """Load Whisper model with appropriate configuration."""
@@ -70,13 +63,16 @@ class TranscriptionService:
             if not hasattr(tqdm.tqdm, "_instances"):
                 tqdm.tqdm._instances = set()
 
-            # Configure model based on device
-            compute_type = "float16" if self.device == "cuda" else "float32"
+            # Get optimal model loading parameters from GPU optimizer
+            model_params = self.gpu_optimizer.optimize_model_loading(
+                self.device, f"whisper-{self.model_size}"
+            )
 
+            logger.info(f"Using compute_type: {model_params['compute_type']}")
             self.model = WhisperModel(
                 self.model_size,
-                device=self.device,
-                compute_type=compute_type,
+                device=model_params["device"],
+                compute_type=model_params["compute_type"],
             )
             self.whisper_model = self.model_size  # Add missing attribute
             self.pyannote_model = (
@@ -135,7 +131,7 @@ class TranscriptionService:
                     self.model = WhisperModel(
                         self.model_size,
                         device=self.device,
-                        compute_type=compute_type,
+                        compute_type="float32",
                     )
 
                     logger.info(
@@ -337,14 +333,24 @@ class TranscriptionService:
     ) -> Dict[str, Any]:
         """Transcribe long audio file by chunking."""
         try:
-            # Calculate number of chunks
-            chunk_duration = self.chunk_length
+            # Get GPU optimization for large files
+            duration_minutes = duration / 60.0
+            optimization_params = self.gpu_optimizer.optimize_for_large_file(
+                duration_minutes
+            )
+
+            # Apply optimization parameters
+            chunk_duration = optimization_params["chunk_size"]
             overlap_duration = self.overlap_length
             step_duration = chunk_duration - overlap_duration
+            clear_cache_frequency = optimization_params["clear_cache_frequency"]
 
             num_chunks = int(np.ceil((duration - overlap_duration) / step_duration))
 
-            logger.info(f"Processing {duration:.2f}s audio in {num_chunks} chunks")
+            logger.info(
+                f"Processing {duration:.2f}s audio in {num_chunks} chunks "
+                f"(chunk_size: {chunk_duration}s, clear_cache every {clear_cache_frequency} chunks)"
+            )
 
             all_segments = []
             total_confidence = 0.0
@@ -367,6 +373,11 @@ class TranscriptionService:
                 chunk_path = self._extract_audio_chunk(audio_path, start_time, end_time)
 
                 try:
+                    # Clear GPU cache periodically to prevent memory issues
+                    if i % clear_cache_frequency == 0 and i > 0:
+                        self.gpu_optimizer.clear_gpu_cache()
+                        logger.debug(f"Cleared GPU cache after processing {i} chunks")
+
                     # Transcribe chunk
                     chunk_result = self._transcribe_single_chunk(
                         chunk_path, transcription, language, None

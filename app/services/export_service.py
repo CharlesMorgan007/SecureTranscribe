@@ -57,31 +57,64 @@ class ExportService:
         Returns:
             Exported file content as bytes
         """
+        logger.info(
+            f"Starting export for transcription {transcription.id} in format {export_format}"
+        )
+
         try:
+            # Validate inputs
+            if not transcription:
+                raise ExportError("Transcription object is None")
+
+            if not hasattr(transcription, "id") or transcription.id is None:
+                raise ExportError("Invalid transcription object: missing ID")
+
             if export_format not in self.supported_formats:
+                logger.error(f"Unsupported export format: {export_format}")
                 raise ExportError(f"Unsupported export format: {export_format}")
 
             include_options = include_options or []
+            logger.info(f"Export options: {include_options}")
 
             # Prepare export data
+            logger.info("Preparing export data...")
             export_data = self._prepare_export_data(
                 transcription, include_options, session
             )
 
+            if not export_data:
+                raise ExportError("Failed to prepare export data - no data available")
+
             # Generate export based on format
+            logger.info(f"Generating {export_format} export...")
             if export_format == "pdf":
-                return self._export_pdf(export_data)
+                result = self._export_pdf(export_data)
             elif export_format == "csv":
-                return self._export_csv(export_data)
+                result = self._export_csv(export_data)
             elif export_format == "txt":
-                return self._export_txt(export_data)
+                result = self._export_txt(export_data)
             elif export_format == "json":
-                return self._export_json(export_data)
+                result = self._export_json(export_data)
             else:
                 raise ExportError(f"Unsupported export format: {export_format}")
 
+            if not result:
+                raise ExportError(
+                    f"Export function returned empty result for format {export_format}"
+                )
+
+            logger.info(f"Export completed successfully, {len(result)} bytes generated")
+            return result
+
+        except ExportError:
+            # Re-raise our own errors
+            logger.error(
+                f"Export failed with ExportError: {str(locals().get('e', 'Unknown'))}"
+            )
+            raise
         except Exception as e:
-            logger.error(f"Export failed: {e}")
+            logger.error(f"Unexpected export error: {type(e).__name__}: {str(e)}")
+            logger.exception("Full traceback:")
             raise ExportError(f"Export failed: {str(e)}")
 
     def _prepare_export_data(

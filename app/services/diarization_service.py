@@ -20,6 +20,7 @@ from app.models.transcription import Transcription
 from app.models.speaker import Speaker
 from app.utils.exceptions import DiarizationError
 from app.services.audio_processor import AudioProcessor
+from app.services.gpu_optimization import get_gpu_optimizer
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ class DiarizationService:
     def __init__(self):
         self.settings = get_settings()
         self.pyannote_model = self.settings.pyannote_model
+        self.gpu_optimizer = get_gpu_optimizer()
         self.device = self._get_device()
         self.pipeline = None
         self.audio_processor = AudioProcessor()
@@ -87,17 +89,8 @@ class DiarizationService:
         self.min_speaker_duration = AUDIO_SETTINGS["min_speaker_duration"]
 
     def _get_device(self) -> str:
-        """Determine the best available device for processing."""
-        # Temporarily force CPU to avoid MPS compatibility issues
-        return "cpu"
-
-        # Original device detection logic (commented out for now)
-        # if self.settings.use_gpu and torch.cuda.is_available():
-        #     return "cuda"
-        # elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        #     return "mps"
-        # else:
-        #     return "cpu"
+        """Determine the best device for processing using GPU optimizer."""
+        return self.gpu_optimizer.get_optimal_device()
 
     def _load_pipeline(self) -> None:
         """Load PyAnnote diarization pipeline."""

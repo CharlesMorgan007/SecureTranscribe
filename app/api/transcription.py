@@ -8,6 +8,7 @@ import os
 import shutil
 import tempfile
 import sys
+import time
 from typing import Optional, List, Dict, Any
 from fastapi import (
     APIRouter,
@@ -460,7 +461,21 @@ async def export_transcription(
     Returns:
         Exported file
     """
+    logger.info(
+        f"Export request received for transcription {transcription_id} as {export_format}"
+    )
+
     try:
+        # Validate transcription ID
+        if not transcription_id or transcription_id <= 0:
+            raise HTTPException(status_code=400, detail="Invalid transcription ID")
+
+        # Validate export format
+        if not export_format:
+            raise HTTPException(status_code=400, detail="Export format is required")
+
+        # Get transcription
+        logger.info(f"Fetching transcription {transcription_id} from database")
         transcription = (
             db.query(Transcription)
             .filter(
@@ -471,29 +486,90 @@ async def export_transcription(
         )
 
         if not transcription:
+            logger.error(
+                f"Transcription {transcription_id} not found for session {user_session.session_id}"
+            )
             raise HTTPException(status_code=404, detail="Transcription not found")
 
         if not transcription.is_completed:
-            raise ValidationError("Transcription must be completed before export")
+            logger.error(
+                f"Transcription {transcription_id} is not completed (status: {transcription.status})"
+            )
+            raise HTTPException(
+                status_code=400, detail="Transcription must be completed before export"
+            )
 
         # Generate export
-        export_service = ExportService()
-        export_content = export_service.export_transcription(
-            transcription, export_format, include_options, db
-        )
+        logger.info(f"Generating export for transcription {transcription_id}")
+        try:
+            export_service = ExportService()
+            export_content = export_service.export_transcription(
+                transcription, export_format, include_options, db
+            )
+        except Exception as export_error:
+            logger.error(
+                f"Export service failed: {type(export_error).__name__}: {str(export_error)}"
+            )
+            logger.exception("Export service exception details:")
+            raise HTTPException(
+                status_code=500, detail=f"Export generation failed: {str(export_error)}"
+            )
 
-        # Create temporary file
-        temp_dir = tempfile.mkdtemp()
-        filename = f"{transcription.original_filename}_transcript.{export_format}"
-        temp_path = os.path.join(temp_dir, filename)
+        if not export_content:
+            logger.error(
+                f"Export service returned empty content for transcription {transcription_id}"
+            )
+            raise HTTPException(
+                status_code=500, detail="Export generation returned empty content"
+            )
 
-        with open(temp_path, "wb") as f:
-            f.write(export_content)
+        # Create temporary file with better error handling
+        try:
+            temp_dir = tempfile.mkdtemp()
+            filename = f"{transcription.original_filename}_transcript.{export_format}"
+            temp_path = os.path.join(temp_dir, filename)
 
-        # Schedule cleanup
-        import asyncio
+            logger.info(f"Writing export content to temporary file: {temp_path}")
+            with open(temp_path, "wb") as f:
+                f.write(export_content)
 
-        asyncio.create_task(cleanup_temp_file(temp_path))
+            # Verify file was created and has content
+            if not os.path.exists(temp_path):
+                raise HTTPException(
+                    status_code=500, detail="Failed to create export file"
+                )
+
+            file_size = os.path.getsize(temp_path)
+            if file_size == 0:
+                raise HTTPException(status_code=500, detail="Export file is empty")
+
+            logger.info(f"Export file created successfully: {file_size} bytes")
+
+        except Exception as file_error:
+            logger.error(f"Failed to create export file: {str(file_error)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to create export file: {str(file_error)}",
+            )
+
+        # Schedule cleanup with better error handling
+        try:
+            import asyncio
+
+            async def cleanup_with_delay():
+                await asyncio.sleep(300)  # 5 minutes delay
+                try:
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                    if os.path.exists(temp_dir):
+                        os.rmdir(temp_dir)
+                    logger.info(f"Cleaned up export file: {temp_path}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to cleanup export file: {cleanup_error}")
+
+            asyncio.create_task(cleanup_with_delay())
+        except Exception as cleanup_setup_error:
+            logger.warning(f"Failed to setup cleanup task: {cleanup_setup_error}")
 
         # Determine media type
         media_types = {
@@ -504,17 +580,28 @@ async def export_transcription(
         }
         media_type = media_types.get(export_format, "application/octet-stream")
 
+        logger.info(f"Returning file response for transcription {transcription_id}")
         return FileResponse(
             path=temp_path,
             filename=filename,
             media_type=media_type,
         )
 
-    except SecureTranscribeError:
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
         raise
+    except SecureTranscribeError:
+        logger.error(
+            f"SecureTranscribeError during export: {str(locals().get('e', 'Unknown'))}"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Export failed: {str(locals().get('e', 'Unknown'))}",
+        )
     except Exception as e:
-        logger.error(f"Failed to export transcription: {e}")
-        raise ExportError(f"Failed to export transcription: {str(e)}")
+        logger.error(f"Unexpected error during export: {type(e).__name__}: {str(e)}")
+        logger.exception("Full export error traceback:")
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
 
 @router.delete("/{transcription_id}")

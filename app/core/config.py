@@ -3,11 +3,14 @@ Core configuration management for SecureTranscribe.
 Handles environment variables, application settings, and audio processing parameters.
 """
 
+import logging
 import os
 from functools import lru_cache
 from typing import List, Optional
 from pydantic_settings import BaseSettings
 from pydantic import Field, validator, field_validator, ConfigDict
+
+logger = logging.getLogger(__name__)
 
 # Audio processing configuration
 AUDIO_SETTINGS = {
@@ -148,7 +151,28 @@ class Settings(BaseSettings):
         """Determine if GPU acceleration should be used."""
         if self.test_mode or self.mock_gpu:
             return False
-        return os.environ.get("CUDA_VISIBLE_DEVICES") != ""
+
+        try:
+            import torch
+
+            # Check if CUDA is actually available and accessible
+            if torch.cuda.is_available():
+                device_count = torch.cuda.device_count()
+                if device_count > 0:
+                    logger.info(f"CUDA devices available: {device_count}")
+                    return True
+                else:
+                    logger.warning("CUDA reported as available but no devices found")
+                    return False
+            else:
+                logger.info("CUDA not available")
+                return False
+        except ImportError:
+            logger.warning("PyTorch not available for GPU detection")
+            return False
+        except Exception as e:
+            logger.warning(f"GPU detection failed: {e}")
+            return False
 
     model_config = ConfigDict(env_file=".env", case_sensitive=False, extra="allow")
 
