@@ -5,12 +5,15 @@ Handles SQLite database initialization, connection pooling, and session manageme
 
 import os
 import logging
-from sqlalchemy import create_engine, MetaData
+import time
+import threading
+from contextlib import contextmanager
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.exc import OperationalError
 from typing import Generator
-from app.utils.exceptions import SecureTranscribeError
 from .config import get_settings, DATABASE_SETTINGS
 
 logger = logging.getLogger(__name__)
@@ -28,19 +31,35 @@ def create_database_engine() -> None:
     settings = get_settings()
     database_url = settings.database_url
 
-    # SQLite-specific configuration
+    # SQLite-specific configuration with thread safety
     if database_url.startswith("sqlite"):
         engine = create_engine(
             database_url,
             connect_args={
                 "check_same_thread": False,
-                "timeout": 20,
+                "timeout": 30,
             },
             poolclass=StaticPool,
             echo=DATABASE_SETTINGS["echo"],
             pool_pre_ping=DATABASE_SETTINGS["pool_pre_ping"],
             pool_recycle=DATABASE_SETTINGS["pool_recycle"],
         )
+
+        # Enable WAL mode for better concurrent access
+        @event.listens_for(engine, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            # Enable Write-Ahead Logging for better concurrency
+            cursor.execute("PRAGMA journal_mode=WAL")
+            # Set busy timeout to handle locking
+            cursor.execute("PRAGMA busy_timeout=30000")  # 30 seconds
+            # Enable foreign key constraints
+            cursor.execute("PRAGMA foreign_keys=ON")
+            # Optimize for concurrent access
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA cache_size=10000")
+            cursor.execute("PRAGMA temp_store=memory")
+            cursor.close()
     else:
         # PostgreSQL/MySQL configuration
         engine = create_engine(
@@ -73,7 +92,6 @@ def init_database() -> None:
 
     # Import all models to ensure they're registered with Base
     from app.models import (
-        Speaker,
         Transcription,
         UserSession,
         ProcessingQueue,
@@ -115,7 +133,7 @@ def init_database() -> None:
 def get_database() -> Generator[Session, None, None]:
     """
     Database dependency for FastAPI.
-    Provides a database session for each request.
+    Provides a database session for each request with proper error handling.
     """
     global SessionLocal, engine
 
@@ -126,19 +144,51 @@ def get_database() -> Generator[Session, None, None]:
         raise RuntimeError("Database components not properly initialized")
 
     db = SessionLocal()
-    try:
-        yield db
-    except Exception as e:
-        logger.error(f"Database session error: {e}")
-        db.rollback()
-        # Auto-reset database on schema corruption errors
-        if "tuple index out of range" in str(e):
-            logger.error(f"Database schema corruption detected: {e}")
-            init_database()
-            raise RuntimeError(
-                "Database was reset due to schema corruption. Please retry request."
-            )
-        raise
+    retry_count = 0
+    max_retries = 3
+
+    while retry_count < max_retries:
+        try:
+            yield db
+            # Success - exit retry loop
+            break
+        except OperationalError as e:
+            if "database is locked" in str(e).lower() and retry_count < max_retries - 1:
+                retry_count += 1
+                logger.warning(
+                    f"Database locked, retrying ({retry_count}/{max_retries})"
+                )
+                time.sleep(0.5 * retry_count)  # Exponential backoff
+                db.rollback()
+                continue
+            else:
+                logger.error(f"Database operational error: {e}")
+                db.rollback()
+                raise
+        except Exception as e:
+            logger.error(f"Database session error: {e}")
+            db.rollback()
+            # Only reset database on critical schema corruption errors
+            if "tuple index out of range" in str(e) and retry_count == 0:
+                logger.error(f"Database schema corruption detected: {e}")
+                # Try to backup before reset
+                try:
+                    backup_database(
+                        f"securetranscribe_corruption_backup_{int(time.time())}.db"
+                    )
+                except Exception as backup_error:
+                    logger.error(f"Failed to backup corrupted database: {backup_error}")
+
+                init_database()
+                raise RuntimeError(
+                    "Database was reset due to schema corruption. Please retry request."
+                )
+            raise
+        finally:
+            if retry_count == max_retries - 1 or not any(
+                "locked" in str(e).lower() for e in [e]
+            ):
+                db.close()
 
 
 def close_database() -> None:
@@ -206,14 +256,19 @@ def restore_database(backup_path: str) -> bool:
         return False
 
 
+# Thread-local storage for database sessions
+_thread_local = threading.local()
+
+
 # Simple database manager for easier access
 class DatabaseManager:
-    """High-level database management class."""
+    """High-level database management class with thread safety."""
 
     def __init__(self):
         self.engine = None
         self.SessionLocal = None
         self._initialize()
+        self._lock = threading.RLock()  # Reentrant lock for write operations
 
     def _initialize(self):
         """Initialize database connection."""
@@ -229,6 +284,23 @@ class DatabaseManager:
             Base.metadata.create_all(bind=engine)
             logger.info("Database tables created successfully")
 
+    @contextmanager
+    def get_thread_session(self):
+        """Get a thread-local database session with automatic cleanup."""
+        if not hasattr(_thread_local, "session"):
+            _thread_local.session = self.SessionLocal()
+
+        session = _thread_local.session
+        try:
+            yield session
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Thread session error: {e}")
+            raise
+        finally:
+            # Don't close thread-local sessions here, let them be reused
+            pass
+
     def get_session(self) -> Session:
         """Get a new database session."""
         return self.SessionLocal()
@@ -237,12 +309,41 @@ class DatabaseManager:
         """Check if database connection is healthy."""
         try:
             session = self.get_session()
-            session.execute("SELECT 1")
+            from sqlalchemy import text
+
+            session.execute(text("SELECT 1"))
             session.close()
             return True
         except Exception as e:
             logger.error(f"Database health check failed: {e}")
             return False
+
+    @contextmanager
+    def write_lock(self):
+        """Context manager for write operations to ensure thread safety."""
+        self._lock.acquire()
+        try:
+            yield
+        finally:
+            self._lock.release()
+
+    def execute_with_retry(self, operation, max_retries=3):
+        """Execute a database operation with retry logic for locking issues."""
+        for attempt in range(max_retries):
+            try:
+                return operation()
+            except OperationalError as e:
+                if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                    logger.warning(
+                        f"Database locked, retrying operation (attempt {attempt + 1})"
+                    )
+                    time.sleep(0.1 * (attempt + 1))  # Exponential backoff
+                    continue
+                else:
+                    raise
+            except Exception as e:
+                logger.error(f"Database operation failed: {e}")
+                raise
 
 
 # Global database manager instance

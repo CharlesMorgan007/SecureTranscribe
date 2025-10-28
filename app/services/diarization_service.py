@@ -179,13 +179,22 @@ class DiarizationService:
             wav_path = self.audio_processor.convert_to_wav(audio_path)
 
             try:
+                # Get audio duration to determine processing strategy
+                duration, _, _ = self.audio_processor._get_audio_info(wav_path)
+
                 if progress_callback:
                     progress_callback(15, "Starting diarization")
 
-                # Perform diarization
-                diarization_result = self._perform_diarization(
-                    wav_path, transcription, progress_callback
-                )
+                # Use chunked processing for long files to avoid PyAnnote issues
+                if duration > 600:  # 10 minutes
+                    diarization_result = self._perform_chunked_diarization(
+                        wav_path, transcription, duration, progress_callback
+                    )
+                else:
+                    # Standard processing for shorter files
+                    diarization_result = self._perform_diarization(
+                        wav_path, transcription, progress_callback
+                    )
 
                 # Process diarization results
                 processed_result = self._process_diarization_result(
@@ -223,23 +232,46 @@ class DiarizationService:
             if progress_callback:
                 progress_callback(20, "Analyzing audio segments")
 
-            # Load audio
+            # Load audio and validate minimum length
             waveform, sample_rate = librosa.load(
                 audio_path, sr=self.sample_rate, mono=True
             )
+            duration = len(waveform) / sample_rate
+
+            # Ensure minimum duration for reliable diarization
+            min_duration = 2.0  # 2 seconds minimum
+            if duration < min_duration:
+                logger.warning(
+                    f"Audio too short for reliable diarization: {duration:.2f}s < {min_duration}s"
+                )
+                # Create mock diarization for very short audio
+                from pyannote.core import Annotation, Segment
+
+                annotation = Annotation()
+                annotation[Segment(0, duration)] = "SPEAKER_00"
+                return annotation
+
             waveform = torch.from_numpy(waveform).float().unsqueeze(0)
 
             if progress_callback:
                 progress_callback(30, "Identifying speakers")
 
-            # Perform diarization with correct pyannote.audio API parameters
-            # Note: min_duration is not supported by pyannote.audio, will filter in post-processing
-            diarization = self.pipeline(
-                {"waveform": waveform, "sample_rate": sample_rate},
-                num_speakers=None,  # Auto-detect
-                min_speakers=1,
-                max_speakers=self.settings.max_speakers,
-            )
+            # Suppress PyAnnote std() warning for small chunks
+            import warnings
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore", message=".*std\(\): degrees of freedom is <= 0.*"
+                )
+
+                # Perform diarization with correct pyannote.audio API parameters
+                # Note: min_duration is not supported by pyannote.audio, will filter in post-processing
+                diarization = self.pipeline(
+                    {"waveform": waveform, "sample_rate": sample_rate},
+                    num_speakers=None,  # Auto-detect
+                    min_speakers=1,
+                    max_speakers=self.settings.max_speakers,
+                )
 
             if progress_callback:
                 progress_callback(70, "Processing speaker segments")
@@ -248,7 +280,167 @@ class DiarizationService:
 
         except Exception as e:
             logger.error(f"Diarization processing failed: {e}")
+            # Fallback to simple speaker assignment for very short audio
+            if "duration" in locals() and duration < min_duration:
+                logger.info("Using fallback diarization for short audio")
+                from pyannote.core import Annotation, Segment
+
+                annotation = Annotation()
+                annotation[Segment(0, duration)] = "SPEAKER_00"
+                return annotation
             raise DiarizationError(f"Diarization processing failed: {str(e)}")
+
+    def _perform_chunked_diarization(
+        self,
+        audio_path: str,
+        transcription: Transcription,
+        total_duration: float,
+        progress_callback: Optional[callable] = None,
+    ) -> Annotation:
+        """
+        Perform diarization on long audio files by processing in chunks.
+        This helps avoid PyAnnote warnings about insufficient data for statistical calculations.
+        """
+        from pyannote.core import Annotation, Segment
+        import librosa
+
+        try:
+            if progress_callback:
+                progress_callback(20, "Preparing chunked diarization")
+
+            # Load the full audio
+            waveform, sample_rate = librosa.load(
+                audio_path, sr=self.sample_rate, mono=True
+            )
+
+            # Calculate chunk parameters
+            chunk_duration = 300  # 5 minutes per chunk
+            overlap_duration = 30  # 30 seconds overlap
+            min_chunk_duration = 60  # 1 minute minimum
+
+            # Adjust chunk size for very long files
+            if total_duration > 3600:  # > 1 hour
+                chunk_duration = 600  # 10 minutes chunks
+            elif total_duration < 1800:  # < 30 minutes
+                chunk_duration = 180  # 3 minutes chunks
+
+            logger.info(
+                f"Processing {total_duration:.1f}s audio in {chunk_duration}s chunks "
+                f"with {overlap_duration}s overlap"
+            )
+
+            # Process chunks
+            full_annotation = Annotation()
+            speakers_found = set()
+            chunk_count = 0
+
+            start_time = 0
+            while start_time < total_duration:
+                end_time = min(start_time + chunk_duration, total_duration)
+                chunk_count += 1
+
+                # Extract chunk
+                start_sample = int(start_time * sample_rate)
+                end_sample = int(end_time * sample_rate)
+                chunk_waveform = waveform[start_sample:end_sample]
+                chunk_duration_actual = len(chunk_waveform) / sample_rate
+
+                # Skip very short chunks
+                if chunk_duration_actual < min_chunk_duration and start_time > 0:
+                    logger.warning(
+                        f"Skipping short chunk: {chunk_duration_actual:.1f}s"
+                    )
+                    start_time = end_time
+                    continue
+
+                if progress_callback:
+                    progress_callback(
+                        20
+                        + (
+                            chunk_count
+                            * 30
+                            // max(1, int(total_duration / chunk_duration))
+                        ),
+                        f"Processing chunk {chunk_count} ({start_time:.0f}-{end_time:.0f}s)",
+                    )
+
+                try:
+                    # Process chunk
+                    chunk_tensor = torch.from_numpy(chunk_waveform).float().unsqueeze(0)
+
+                    # Suppress warnings for each chunk
+                    import warnings
+
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings(
+                            "ignore", message=".*std\(\): degrees of freedom is <= 0.*"
+                        )
+
+                        chunk_annotation = self.pipeline(
+                            {"waveform": chunk_tensor, "sample_rate": sample_rate},
+                            num_speakers=None,
+                            min_speakers=1,
+                            max_speakers=min(self.settings.max_speakers, 4),
+                        )
+
+                    # Map chunk annotations to full timeline
+                    for segment, track, speaker in chunk_annotation.itertracks(
+                        yield_label=True
+                    ):
+                        global_start = start_time + segment.start
+                        global_end = start_time + segment.end
+
+                        # Skip segments that overlap with previous chunks (except first chunk)
+                        if start_time > 0 and segment.start < overlap_duration:
+                            continue
+
+                        # Use consistent speaker mapping
+                        mapped_speaker = f"SPEAKER_{len(speakers_found):02d}"
+                        if speaker not in speakers_found:
+                            speakers_found.add(speaker)
+                            mapped_speaker = f"SPEAKER_{len(speakers_found) - 1:02d}"
+                        else:
+                            speaker_index = list(speakers_found).index(speaker)
+                            mapped_speaker = f"SPEAKER_{speaker_index:02d}"
+
+                        full_annotation[Segment(global_start, global_end)] = (
+                            mapped_speaker
+                        )
+
+                    logger.info(
+                        f"Chunk {chunk_count} processed: {len(speakers_found)} speakers found"
+                    )
+
+                except Exception as chunk_error:
+                    logger.warning(
+                        f"Failed to process chunk {chunk_count}: {chunk_error}"
+                    )
+                    # Continue with next chunk instead of failing completely
+                    pass
+
+                # Move to next chunk with overlap
+                start_time = end_time - overlap_duration
+                if start_time < 0:
+                    start_time = 0
+
+            if not full_annotation.tracks:
+                # Fallback: single speaker for entire audio
+                logger.warning("No valid segments found, using single speaker fallback")
+                full_annotation[Segment(0, total_duration)] = "SPEAKER_00"
+
+            logger.info(
+                f"Chunked diarization completed: {len(speakers_found)} speakers "
+                f"in {chunk_count} chunks"
+            )
+
+            return full_annotation
+
+        except Exception as e:
+            logger.error(f"Chunked diarization failed: {e}")
+            # Fallback to simple annotation
+            annotation = Annotation()
+            annotation[Segment(0, total_duration)] = "SPEAKER_00"
+            return annotation
 
     def _process_diarization_result(
         self,
