@@ -98,11 +98,14 @@ class UserSession(Base):
     @hybrid_property
     def formatted_session_age(self) -> str:
         """Get formatted session age string."""
-        age_seconds = int(self.session_age)
-        hours = age_seconds // 3600
-        minutes = (age_seconds % 3600) // 60
-        seconds = age_seconds % 60
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        try:
+            age_seconds = int(self.session_age) if self.session_age is not None else 0
+            hours = age_seconds // 3600
+            minutes = (age_seconds % 3600) // 60
+            seconds = age_seconds % 60
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        except (TypeError, ValueError):
+            return "00:00:00"
 
     @hybrid_property
     def is_processing(self) -> bool:
@@ -112,9 +115,22 @@ class UserSession(Base):
     @hybrid_property
     def processing_efficiency(self) -> float:
         """Calculate processing efficiency (audio_duration / processing_time)."""
-        if self.total_processing_time > 0:
+        if self.total_processing_time > 0 and self.total_audio_duration >= 0:
             return self.total_audio_duration / self.total_processing_time
         return 0.0
+
+    @processing_efficiency.expression
+    def processing_efficiency(cls):
+        """SQL expression for processing_efficiency."""
+        from sqlalchemy import case
+
+        return case(
+            (
+                cls.total_processing_time > 0,
+                cls.total_audio_duration / cls.total_processing_time,
+            ),
+            else_=0.0,
+        )
 
     def update_last_accessed(self) -> None:
         """Update last accessed timestamp."""
@@ -151,12 +167,15 @@ class UserSession(Base):
         self.total_audio_duration += audio_duration
         self.total_files_processed += 1
 
-        # Update average confidence
-        if self.total_files_processed > 0:
+        # Update average confidence with proper validation
+        if self.total_files_processed > 0 and confidence >= 0 and confidence <= 1:
             total_confidence = (
                 self.average_confidence * (self.total_files_processed - 1) + confidence
             )
             self.average_confidence = total_confidence / self.total_files_processed
+        elif confidence >= 0 and confidence <= 1:
+            # First transcription, set the confidence directly
+            self.average_confidence = confidence
 
         self.update_last_accessed()
 
@@ -218,11 +237,11 @@ class UserSession(Base):
             "is_valid": self.is_valid,
             "queue_position": self.queue_position,
             "is_processing": self.is_processing,
-            "total_files_processed": self.total_files_processed,
-            "session_age": self.session_age,
-            "formatted_session_age": self.formatted_session_age,
-            "processing_efficiency": self.processing_efficiency,
-            "average_confidence": self.average_confidence,
+            "total_files_processed": self.total_files_processed or 0,
+            "session_age": self.session_age or 0,
+            "formatted_session_age": self.formatted_session_age or "00:00:00",
+            "processing_efficiency": self.processing_efficiency or 0.0,
+            "average_confidence": self.average_confidence or 0.0,
         }
 
         if include_sensitive:
@@ -264,6 +283,12 @@ class UserSession(Base):
             ip_address=ip_address,
             user_identifier=user_identifier,
             expires_at=expires_at,
+            # Initialize default values to prevent undefined/NaN issues
+            total_files_processed=0,
+            average_confidence=0.0,
+            queue_position=0,
+            total_processing_time=0.0,
+            total_audio_duration=0.0,
         )
 
         session.add(user_session)

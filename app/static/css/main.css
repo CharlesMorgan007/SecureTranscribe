@@ -14,7 +14,7 @@
 }
 
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
     background-color: var(--light-color);
     color: var(--dark-color);
     line-height: 1.6;
@@ -32,6 +32,23 @@ body {
 
 .navbar-nav .nav-link:hover {
     color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.navbar-nav .nav-link.active {
+    color: #fff !important;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 0.25rem;
+}
+
+/* Section Visibility */
+#upload,
+#queue,
+#transcriptions {
+    display: block;
+}
+
+#transcriptionDetails {
+    display: none;
 }
 
 /* Card Styles */
@@ -84,13 +101,15 @@ body {
 }
 
 /* Form Styles */
-.form-control, .form-select {
+.form-control,
+.form-select {
     border-radius: var(--border-radius);
     border: 1px solid #ced4da;
     transition: var(--transition);
 }
 
-.form-control:focus, .form-select:focus {
+.form-control:focus,
+.form-select:focus {
     border-color: var(--primary-color);
     box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
 }
@@ -163,7 +182,7 @@ body {
 }
 
 .timestamp {
-    font-family: 'Courier New', monospace;
+    font-family: "Courier New", monospace;
     font-size: 0.875rem;
     color: var(--secondary-color);
 }
@@ -238,8 +257,12 @@ body {
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
 /* File Upload Area */
@@ -360,8 +383,12 @@ body {
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
 
 .slide-up {
