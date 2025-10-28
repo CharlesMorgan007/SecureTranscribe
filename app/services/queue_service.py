@@ -444,12 +444,6 @@ class QueueService:
                     db.close()
                 except Exception:
                     pass
-        finally:
-            if db:
-                try:
-                    db.close()
-                except Exception:
-                    pass
 
     def _job_completed(self, job_id: str, future) -> None:
         """Handle job completion."""

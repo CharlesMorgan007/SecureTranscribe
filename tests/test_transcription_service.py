@@ -1,4 +1,4 @@
-Unit tests for TranscriptionService.
+"""Unit tests for TranscriptionService.
 
 Tests the core transcription functionality including:
 - Model loading and initialization
@@ -35,6 +35,7 @@ class TestTranscriptionService(unittest.TestCase):
     def tearDown(self):
         """Clean up test fixtures."""
         import shutil
+
         shutil.rmtree(self.test_audio_dir, ignore_errors=True)
 
     def _create_test_audio_file(self, path: str, duration: float = 1.0):
@@ -45,13 +46,13 @@ class TestTranscriptionService(unittest.TestCase):
         sample_rate = 16000
         samples = int(sample_rate * duration)
 
-        with wave.open(path, 'w') as wav_file:
+        with wave.open(path, "w") as wav_file:
             wav_file.setnchannels(1)
             wav_file.setsampwidth(2)
             wav_file.setframerate(sample_rate)
 
             # Generate silence (zero amplitude)
-            silence = struct.pack('<h', 0) * samples
+            silence = struct.pack("<h", 0) * samples
             wav_file.writeframes(silence)
 
     def test_init(self):
@@ -85,7 +86,7 @@ class TestTranscriptionService(unittest.TestCase):
         """Test invalid file format validation."""
         # Create a text file (invalid format)
         invalid_path = os.path.join(self.test_audio_dir, "invalid.txt")
-        with open(invalid_path, 'w') as f:
+        with open(invalid_path, "w") as f:
             f.write("not audio")
 
         result = self.transcription_service.validate_file(invalid_path)
@@ -94,7 +95,7 @@ class TestTranscriptionService(unittest.TestCase):
     def test_validate_file_too_large(self):
         """Test file size validation."""
         # Mock large file
-        with patch('os.path.getsize', return_value=600 * 1024 * 1024):  # 600MB
+        with patch("os.path.getsize", return_value=600 * 1024 * 1024):  # 600MB
             result = self.transcription_service.validate_file("dummy.wav")
             self.assertFalse(result)
 
@@ -103,8 +104,10 @@ class TestTranscriptionService(unittest.TestCase):
         result = self.transcription_service.validate_file("/nonexistent/file.wav")
         self.assertFalse(result)
 
-    @patch('app.services.transcription_service.TranscriptionService._load_model')
-    @patch('app.services.transcription_service.TranscriptionService._process_transcription')
+    @patch("app.services.transcription_service.TranscriptionService._load_model")
+    @patch(
+        "app.services.transcription_service.TranscriptionService._process_transcription"
+    )
     def test_transcribe_audio_success(self, mock_process, mock_load):
         """Test successful audio transcription."""
         # Setup mocks
@@ -112,7 +115,7 @@ class TestTranscriptionService(unittest.TestCase):
         mock_process.return_value = {
             "text": "Test transcription result",
             "language": "en",
-            "avg_confidence": 0.95
+            "avg_confidence": 0.95,
         }
 
         # Create test transcription
@@ -128,10 +131,7 @@ class TestTranscriptionService(unittest.TestCase):
 
         # Test transcription
         result = self.transcription_service.transcribe_audio(
-            self.test_audio_path,
-            transcription,
-            mock_session,
-            language="en"
+            self.test_audio_path, transcription, mock_session, language="en"
         )
 
         # Verify results
@@ -147,7 +147,7 @@ class TestTranscriptionService(unittest.TestCase):
         """Test transcription with invalid file."""
         # Create invalid audio file
         invalid_path = os.path.join(self.test_audio_dir, "invalid.wav")
-        with open(invalid_path, 'w') as f:
+        with open(invalid_path, "w") as f:
             f.write("not audio")
 
         transcription = Mock(spec=Transcription)
@@ -155,12 +155,10 @@ class TestTranscriptionService(unittest.TestCase):
 
         with self.assertRaises(TranscriptionError):
             self.transcription_service.transcribe_audio(
-                invalid_path,
-                transcription,
-                mock_session
+                invalid_path, transcription, mock_session
             )
 
-    @patch('faster_whisper.WhisperModel')
+    @patch("faster_whisper.WhisperModel")
     def test_load_model(self, mock_whisper_model):
         """Test model loading."""
         mock_model = Mock()
@@ -171,16 +169,14 @@ class TestTranscriptionService(unittest.TestCase):
 
         self.assertEqual(service.model, mock_model)
         mock_whisper_model.assert_called_once_with(
-            "base",
-            device="cpu",
-            compute_type="float32"
+            "base", device="cpu", compute_type="float32"
         )
 
     def test_process_transcription_short_audio(self):
         """Test processing short audio file."""
         # Test implementation would depend on actual audio processing logic
         # For now, test that method exists and handles short audio
-        self.assertTrue(hasattr(self.transcription_service, '_process_transcription'))
+        self.assertTrue(hasattr(self.transcription_service, "_process_transcription"))
 
         # Test with very short audio
         short_audio = os.path.join(self.test_audio_dir, "short.wav")
@@ -190,7 +186,9 @@ class TestTranscriptionService(unittest.TestCase):
         try:
             # We can't actually test without proper model setup
             # but we can verify the method handles edge cases
-            self.transcription_service._transcribe_single_chunk = Mock(return_value={"text": "test"})
+            self.transcription_service._transcribe_single_chunk = Mock(
+                return_value={"text": "test"}
+            )
             result = self.transcription_service._process_transcription(
                 short_audio, Mock(), Mock()
             )
@@ -209,14 +207,14 @@ class TestTranscriptionService(unittest.TestCase):
             self.test_audio_path,
             transcription,
             Mock(),
-            progress_callback=lambda p, s: None
+            progress_callback=lambda p, s: None,
         )
 
         # Should not crash and should handle callback
         self.assertTrue(True)  # If we get here, callback was handled
 
-    @patch('os.path.exists')
-    @patch('os.remove')
+    @patch("os.path.exists")
+    @patch("os.remove")
     def test_cleanup_temporary_files(self, mock_remove, mock_exists):
         """Test temporary file cleanup."""
         mock_exists.return_value = True
@@ -237,6 +235,7 @@ class TestTranscriptionServiceIntegration(unittest.TestCase):
     def tearDown(self):
         """Clean up integration test fixtures."""
         import shutil
+
         shutil.rmtree(self.test_audio_dir, ignore_errors=True)
 
     def test_end_to_end_workflow(self):
@@ -248,7 +247,7 @@ class TestTranscriptionServiceIntegration(unittest.TestCase):
             file_path=self.test_audio_dir,
             file_size=1024,
             file_duration=2.0,
-            file_format="wav"
+            file_format="wav",
         )
 
         # Test that the service can handle the workflow
