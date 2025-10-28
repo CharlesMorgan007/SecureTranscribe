@@ -8,6 +8,7 @@ import os
 import re
 from pathlib import Path
 
+
 def check_txt_export():
     """Check the _export_txt method for issues."""
     print("🔍 Checking TXT Export Method...")
@@ -22,7 +23,9 @@ def check_txt_export():
     content = export_file.read_text()
 
     # Find _export_txt method
-    export_txt_match = re.search(r'def _export_txt\(self.*?\):(.*?)(?=\ndef|\Z)', content, re.DOTALL)
+    export_txt_match = re.search(
+        r"def _export_txt\(self.*?\):(.*?)(?=\ndef|\Z)", content, re.DOTALL
+    )
 
     if not export_txt_match:
         print("❌ _export_txt method not found")
@@ -74,12 +77,14 @@ def check_txt_export():
         print("\nThese issues likely cause TXT export failures.")
         return False
 
+
 def check_dependencies():
     """Check if TXT export dependencies are available."""
     print("\n🔍 Checking Dependencies...")
 
     try:
         import io
+
         print("✅ io module available")
     except ImportError:
         print("❌ io module missing")
@@ -87,12 +92,14 @@ def check_dependencies():
 
     try:
         import json
+
         print("✅ json module available")
     except ImportError:
         print("❌ json module missing")
         return False
 
     return True
+
 
 def main():
     """Run TXT export check."""
@@ -113,14 +120,6 @@ def main():
         print("\n❌ TXT EXPORT METHOD ANALYSIS FAILED")
         return 1
 
+
 if __name__ == "__main__":
     exit(main())
-```
-
-Now let me run this simple check:
-<tool_call>terminal
-<arg_key>command</arg_key>
-<arg_value>python3 check_txt_export.py</arg_value>
-<arg_key>cd</arg_key>
-<arg_value>/Users/cmorgan/Devel/Personal/SecureTranscribe</arg_value>
-</tool_call>

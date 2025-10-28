@@ -8,6 +8,7 @@ import os
 import re
 from pathlib import Path
 
+
 def analyze_txt_export_method():
     """Analyze the _export_txt method for potential issues."""
     print("🔍 Analyzing TXT Export Method...")
@@ -22,7 +23,9 @@ def analyze_txt_export_method():
     content = export_file.read_text()
 
     # Find the _export_txt method
-    export_txt_match = re.search(r'def _export_txt\(self.*?\):(.*?)(?=\ndef|\Z)', content, re.DOTALL)
+    export_txt_match = re.search(
+        r"def _export_txt\(self.*?\):(.*?)(?=\ndef|\Z)", content, re.DOTALL
+    )
 
     if not export_txt_match:
         print("❌ _export_txt method not found")
@@ -36,10 +39,10 @@ def analyze_txt_export_method():
 
     # Check 1: String formatting issues
     if '"created_at"][:10]' in export_txt_body:
-        issues_found.append("Potential string slicing issue: created_at\"][:10\"]")
+        issues_found.append('Potential string slicing issue: created_at"][:10"]')
 
     # Check 2: Missing error handling
-    if 'except Exception as e:' not in export_txt_body:
+    if "except Exception as e:" not in export_txt_body:
         issues_found.append("Missing exception handling in _export_txt")
 
     # Check 3: Encoding issues
@@ -47,7 +50,7 @@ def analyze_txt_export_method():
         issues_found.append("Missing UTF-8 encoding")
 
     # Check 4: Buffer handling
-    if 'buffer = io.StringIO()' not in export_txt_body:
+    if "buffer = io.StringIO()" not in export_txt_body:
         issues_found.append("Missing StringIO buffer initialization")
 
     # Check 5: Return statement
@@ -57,8 +60,8 @@ def analyze_txt_export_method():
     # Check 6: Method calls that might fail
     risky_patterns = [
         r'get\([\'"][^\'"]+[\'"]\)',
-        r'\.format\(',
-        r'%[^s]*\(',
+        r"\.format\(",
+        r"%[^s]*\(",
     ]
 
     for pattern, description in risky_patterns:
@@ -66,7 +69,7 @@ def analyze_txt_export_method():
             issues_found.append(f"Risky pattern: {description}")
 
     # Check 7: Missing imports
-    if 'import io' not in content[:500] and 'StringIO' in export_txt_body:
+    if "import io" not in content[:500] and "StringIO" in export_txt_body:
         issues_found.append("StringIO used but io not imported")
 
     print(f"\n📊 Analysis Results:")
@@ -80,6 +83,7 @@ def analyze_txt_export_method():
         print("✅ No obvious issues found in _export_txt method")
 
     return len(issues_found) == 0
+
 
 def check_file_permissions():
     """Check file permissions for temp directories."""
@@ -114,6 +118,7 @@ def check_file_permissions():
         print(f"❌ Error checking permissions: {e}")
         return False
 
+
 def check_common_txt_export_issues():
     """Check for common TXT export issues."""
     print("🔍 Checking Common TXT Export Issues...")
@@ -139,6 +144,7 @@ def check_common_txt_export_issues():
     # Check StringIO availability
     try:
         import io
+
         buffer = io.StringIO()
         buffer.write("test")
         print("✅ StringIO: OK")
@@ -146,6 +152,7 @@ def check_common_txt_export_issues():
         issues.append(f"StringIO error: {e}")
 
     return issues
+
 
 def main():
     """Run TXT export analysis and provide recommendations."""
@@ -169,7 +176,9 @@ def main():
         print("  1. Check production logs for specific error messages:")
         print("     tail -f logs/securetranscribe.log | grep -i 'txt'")
         print("  2. Verify transcription data structure in database:")
-        print("     SELECT id, full_transcript FROM transcriptions WHERE id = <transcription_id>")
+        print(
+            "     SELECT id, full_transcript FROM transcriptions WHERE id = <transcription_id>"
+        )
         print("  3. Test with different transcription content:")
         print("     - Simple text without special characters")
         print("     - Different speaker assignments")
@@ -198,15 +207,6 @@ def main():
 
         return 1
 
+
 if __name__ == "__main__":
     exit(main())
-```
-
-This analysis script will:
-1. Examine the `_export_txt` method for structural issues
-2. Check file permissions and encoding support
-3. Identify common TXT export failure patterns
-4. Provide targeted debugging steps
-5. Generate actionable recommendations for fixing TXT export issues
-
-Run this on your production server to identify exactly why TXT exports are failing.
