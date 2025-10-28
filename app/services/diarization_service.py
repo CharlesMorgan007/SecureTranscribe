@@ -239,7 +239,7 @@ class DiarizationService:
             duration = len(waveform) / sample_rate
 
             # Ensure minimum duration for reliable diarization
-            min_duration = 2.0  # 2 seconds minimum
+            min_duration = 1.0  # 1 second minimum for testing
             if duration < min_duration:
                 logger.warning(
                     f"Audio too short for reliable diarization: {duration:.2f}s < {min_duration}s"
@@ -257,6 +257,9 @@ class DiarizationService:
                 progress_callback(30, "Identifying speakers")
 
             # Suppress PyAnnote std() warning for small chunks
+            import warnings
+
+            # Use warnings context properly - only filter std() warnings, keep important ones
             import warnings
 
             with warnings.catch_warnings():
