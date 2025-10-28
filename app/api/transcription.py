@@ -28,6 +28,7 @@ from app.utils.exceptions import (
     SecureTranscribeError,
     FileUploadError,
     TranscriptionError,
+    ValidationError,
 )
 from app.models.transcription import Transcription
 from app.models.session import UserSession
@@ -274,7 +275,7 @@ async def start_transcription(
 @router.get("/status/{transcription_id}")
 async def get_transcription_status(
     transcription_id: int,
-    database: Session = Depends(get_database),
+    db: Session = Depends(get_database),
     user_session: UserSession = Depends(get_current_session),
 ):
     """

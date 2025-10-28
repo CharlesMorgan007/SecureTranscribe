@@ -136,7 +136,7 @@ class TestRunner:
             "fastapi",
             "sqlalchemy",
             "pydantic",
-            "pydantic-settings",
+            "pydantic_settings",
             "pytest",
             "uvicorn",
         ]

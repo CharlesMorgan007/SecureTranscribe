@@ -56,9 +56,6 @@ class SessionResponse(BaseModel):
     processing_efficiency: float
     average_confidence: float
 
-    class Config:
-        from_attributes = True
-
 
 @router.get("/current", response_model=SessionResponse)
 async def get_current_session_info(
@@ -89,7 +86,30 @@ async def get_current_session_info(
         user_session.update_last_accessed()
         db.commit()
 
-        return SessionResponse.from_orm(user_session)
+        return SessionResponse(
+            id=user_session.id,
+            session_id=user_session.session_id,
+            user_identifier=user_session.user_identifier,
+            created_at=user_session.created_at.isoformat()
+            if user_session.created_at
+            else None,
+            last_accessed=user_session.last_accessed.isoformat()
+            if user_session.last_accessed
+            else None,
+            expires_at=user_session.expires_at.isoformat()
+            if user_session.expires_at
+            else None,
+            is_active=user_session.is_active,
+            is_authenticated=user_session.is_authenticated,
+            is_valid=user_session.is_valid,
+            queue_position=user_session.queue_position,
+            is_processing=user_session.is_processing,
+            total_files_processed=user_session.total_files_processed,
+            session_age=user_session.session_age,
+            formatted_session_age=user_session.formatted_session_age,
+            processing_efficiency=user_session.processing_efficiency,
+            average_confidence=user_session.average_confidence,
+        )
 
     except SecureTranscribeError:
         raise
@@ -115,13 +135,36 @@ async def create_session(
     """
     try:
         user_session = UserSession.create_session(
-            db=db,
+            session=db,
             user_identifier=session_data.user_identifier,
             user_agent=session_data.user_agent,
             ip_address=session_data.ip_address,
         )
 
-        return SessionResponse.from_orm(user_session)
+        return SessionResponse(
+            id=user_session.id,
+            session_id=user_session.session_id,
+            user_identifier=user_session.user_identifier,
+            created_at=user_session.created_at.isoformat()
+            if user_session.created_at
+            else None,
+            last_accessed=user_session.last_accessed.isoformat()
+            if user_session.last_accessed
+            else None,
+            expires_at=user_session.expires_at.isoformat()
+            if user_session.expires_at
+            else None,
+            is_active=user_session.is_active,
+            is_authenticated=user_session.is_authenticated,
+            is_valid=user_session.is_valid,
+            queue_position=user_session.queue_position,
+            is_processing=user_session.is_processing,
+            total_files_processed=user_session.total_files_processed,
+            session_age=user_session.session_age,
+            formatted_session_age=user_session.formatted_session_age,
+            processing_efficiency=user_session.processing_efficiency,
+            average_confidence=user_session.average_confidence,
+        )
 
     except SecureTranscribeError:
         raise
@@ -168,7 +211,30 @@ async def update_current_session(
         user_session.update_last_accessed()
         db.commit()
 
-        return SessionResponse.from_orm(user_session)
+        return SessionResponse(
+            id=user_session.id,
+            session_id=user_session.session_id,
+            user_identifier=user_session.user_identifier,
+            created_at=user_session.created_at.isoformat()
+            if user_session.created_at
+            else None,
+            last_accessed=user_session.last_accessed.isoformat()
+            if user_session.last_accessed
+            else None,
+            expires_at=user_session.expires_at.isoformat()
+            if user_session.expires_at
+            else None,
+            is_active=user_session.is_active,
+            is_authenticated=user_session.is_authenticated,
+            is_valid=user_session.is_valid,
+            queue_position=user_session.queue_position,
+            is_processing=user_session.is_processing,
+            total_files_processed=user_session.total_files_processed,
+            session_age=user_session.session_age,
+            formatted_session_age=user_session.formatted_session_age,
+            processing_efficiency=user_session.processing_efficiency,
+            average_confidence=user_session.average_confidence,
+        )
 
     except SecureTranscribeError:
         raise
