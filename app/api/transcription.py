@@ -329,7 +329,7 @@ async def get_transcription_status(
             "completed_at": transcription.completed_at.isoformat()
             if transcription.completed_at
             else None,
-            "processing_time": transcription.processing_duration,
+            "processing_time": transcription.processing_time,
             "file_info": {
                 "filename": transcription.original_filename,
                 "duration": transcription.file_duration,
