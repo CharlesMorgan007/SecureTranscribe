@@ -325,7 +325,18 @@ class QueueService:
             if not job:
                 raise QueueError(f"Job not found: {job.job_id}")
 
-            # Get transcription
+            # Use a single database session for the entire job execution
+            db = next(get_database())
+
+            # Re-fetch the job and transcription in this session
+            job = (
+                db.query(ProcessingQueue)
+                .filter(ProcessingQueue.job_id == job.job_id)
+                .first()
+            )
+            if not job:
+                raise QueueError(f"Job not found: {job.job_id}")
+
             transcription = (
                 db.query(Transcription)
                 .filter(Transcription.id == job.transcription_id)
@@ -427,6 +438,12 @@ class QueueService:
                     pass  # Already in error state
             logger.error(f"Job execution failed {job.job_id}: {e}")
             raise QueueError(f"Job execution failed: {str(e)}")
+        finally:
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
         finally:
             if db:
                 try:
