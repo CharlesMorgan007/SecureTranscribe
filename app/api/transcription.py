@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 import tempfile
+import sys
 from typing import Optional, List, Dict, Any
 from fastapi import (
     APIRouter,
@@ -214,7 +215,7 @@ async def start_transcription(
     try:
         # Get transcription
         transcription = (
-            db.query(Transcription)
+            database.query(Transcription)
             .filter(
                 Transcription.id == transcription_id,
                 Transcription.session_id == user_session.session_id,
@@ -273,7 +274,7 @@ async def start_transcription(
 @router.get("/status/{transcription_id}")
 async def get_transcription_status(
     transcription_id: int,
-    db: Session = Depends(get_database),
+    database: Session = Depends(get_database),
     user_session: UserSession = Depends(get_current_session),
 ):
     """
@@ -289,7 +290,7 @@ async def get_transcription_status(
     """
     try:
         transcription = (
-            db.query(Transcription)
+            database.query(Transcription)
             .filter(
                 Transcription.id == transcription_id,
                 Transcription.session_id == user_session.session_id,
@@ -385,7 +386,7 @@ async def assign_speakers(
     """
     try:
         transcription = (
-            db.query(Transcription)
+            database.query(Transcription)
             .filter(
                 Transcription.id == transcription_id,
                 Transcription.session_id == user_session.session_id,
@@ -407,7 +408,7 @@ async def assign_speakers(
 
             # Create or update speaker profile
             speaker = (
-                db.query(Speaker)
+                database.query(Speaker)
                 .filter(Speaker.name == new_name, Speaker.is_active == True)
                 .first()
             )
@@ -460,7 +461,7 @@ async def export_transcription(
     """
     try:
         transcription = (
-            db.query(Transcription)
+            database.query(Transcription)
             .filter(
                 Transcription.id == transcription_id,
                 Transcription.session_id == user_session.session_id,
@@ -534,7 +535,7 @@ async def delete_transcription(
     """
     try:
         transcription = (
-            db.query(Transcription)
+            database.query(Transcription)
             .filter(
                 Transcription.id == transcription_id,
                 Transcription.session_id == user_session.session_id,
@@ -565,8 +566,8 @@ async def delete_transcription(
                     queue_service.cancel_job(job.job_id)
 
         # Delete transcription record
-        db.delete(transcription)
-        db.commit()
+        database.delete(transcription)
+        database.commit()
 
         return {
             "success": True,
@@ -603,7 +604,7 @@ async def list_transcriptions(
         List of transcriptions
     """
     try:
-        query = db.query(Transcription).filter(
+        query = database.query(Transcription).filter(
             Transcription.session_id == user_session.session_id
         )
 

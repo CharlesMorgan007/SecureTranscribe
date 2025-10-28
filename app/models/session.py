@@ -293,7 +293,7 @@ class UserSession(Base):
 
         session.add(user_session)
         session.commit()
-        session.refresh(user_session)
+        # No need to refresh - object is already bound to this session after commit
 
         logger.info(
             f"Created new session: {session_id} for user: {user_identifier or 'anonymous'}"
