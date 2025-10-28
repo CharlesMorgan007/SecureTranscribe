@@ -68,7 +68,19 @@ class AudioProcessor:
                 )
 
             # Check MIME type
-            mime_type = magic.from_file(str(file_path), mime=True)
+            try:
+                mime_type = magic.from_file(str(file_path), mime=True)
+            except Exception as mime_error:
+                # Fallback MIME detection for problematic files
+                if file_path.suffix.lower() in [".wav", ".mp3"]:
+                    mime_type = (
+                        "audio/wav"
+                        if file_path.suffix.lower() == ".wav"
+                        else "audio/mpeg"
+                    )
+                else:
+                    raise AudioProcessingError(f"MIME detection failed: {mime_error}")
+
             if mime_type not in SECURITY_SETTINGS["allowed_mime_types"]:
                 raise AudioProcessingError(f"Invalid file type: {mime_type}")
 

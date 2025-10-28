@@ -78,6 +78,10 @@ class TranscriptionService:
                 device=self.device,
                 compute_type=compute_type,
             )
+            self.whisper_model = self.model_size  # Add missing attribute
+            self.pyannote_model = (
+                "pyannote/speaker-diarization-3.1"  # Add missing attribute
+            )
 
             logger.info(f"Whisper model loaded successfully on {self.device}")
 
