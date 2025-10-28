@@ -154,6 +154,8 @@ class Settings(BaseSettings):
 
 
 @lru_cache()
-def get_settings() -> Settings:
+def get_settings(force_reload: bool = False) -> Settings:
     """Get cached settings instance."""
+    if force_reload:
+        get_settings.cache_clear()
     return Settings()

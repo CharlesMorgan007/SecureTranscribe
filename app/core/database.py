@@ -185,9 +185,7 @@ def get_database() -> Generator[Session, None, None]:
                 )
             raise
         finally:
-            if retry_count == max_retries - 1 or not any(
-                "locked" in str(e).lower() for e in [e]
-            ):
+            if retry_count == max_retries - 1:
                 db.close()
 
 

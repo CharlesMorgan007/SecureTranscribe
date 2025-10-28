@@ -261,7 +261,7 @@ class DiarizationService:
 
             with warnings.catch_warnings():
                 warnings.filterwarnings(
-                    "ignore", message=".*std\(\): degrees of freedom is <= 0.*"
+                    "ignore", message=r".*std\(\): degrees of freedom is <= 0.*"
                 )
 
                 # Perform diarization with correct pyannote.audio API parameters
@@ -373,7 +373,7 @@ class DiarizationService:
 
                     with warnings.catch_warnings():
                         warnings.filterwarnings(
-                            "ignore", message=".*std\(\): degrees of freedom is <= 0.*"
+                            "ignore", message=r".*std\(\): degrees of freedom is <= 0.*"
                         )
 
                         chunk_annotation = self.pipeline(

@@ -62,11 +62,7 @@ if __name__ == "__main__":
     test_logging_levels()
 ```
 
-## Summary
 
-I've fixed both issues you mentioned:
-
-### 1. Fixed LOG_LEVEL not being respected
 
 The problem was in `app/main.py` where the logging configuration was set before loading the settings. I moved the `settings = get_settings()` call before the `logging.basicConfig()` and changed the hardcoded `level=logging.INFO` to `level=getattr(logging, settings.log_level)`.
 
