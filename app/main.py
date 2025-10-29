@@ -35,6 +35,9 @@ from app.api.speakers import router as speakers_router
 from app.api.sessions import router as sessions_router
 from app.api.queue import router as queue_router
 from app.services.gpu_optimization import initialize_gpu_optimization
+from pyannote.audio.utils.reproducibility import ReproducibilityWarning
+import warnings
+
 
 # Ensure logs directory exists using absolute path
 app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -62,6 +65,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup
     logger.info("Starting SecureTranscribe application...")
+    warnings.filterwarnings("ignore", category=ReproducibilityWarning)
 
     # Ensure required directories exist using absolute paths
     os.makedirs(logs_dir, exist_ok=True)
