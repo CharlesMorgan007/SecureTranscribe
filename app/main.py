@@ -22,6 +22,8 @@ from starlette.status import (
 )
 from sqlalchemy import text
 import uvicorn
+import signal
+import atexit
 
 # Add app to path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -58,6 +60,71 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+# Robust shutdown handlers to stop services and free resources
+_shutdown_registered = False
+
+
+def _graceful_shutdown(signum=None, frame=None):
+    try:
+        logger.info(f"Received shutdown signal: {signum}, shutting down gracefully...")
+    except Exception:
+        pass
+    # Try to stop queue service
+    try:
+        from app.services.queue_service import get_queue_service
+
+        qs = get_queue_service()
+        qs.stop()
+    except Exception as e:
+        try:
+            logger.warning(f"Queue service stop error: {e}")
+        except Exception:
+            pass
+    # Try to clear GPU caches
+    try:
+        from app.services.gpu_optimization import get_gpu_optimizer
+
+        get_gpu_optimizer().clear_gpu_cache()
+    except Exception:
+        pass
+    # Try to close database connections
+    try:
+        from app.core.database import close_database
+
+        close_database()
+    except Exception as e:
+        try:
+            logger.warning(f"Database close error: {e}")
+        except Exception:
+            pass
+    # Exit immediately if invoked from signal
+    if signum is not None:
+        try:
+            logger.info("Shutdown complete. Exiting.")
+        except Exception:
+            pass
+        os._exit(0)
+
+
+def _register_shutdown_handlers():
+    global _shutdown_registered
+    if _shutdown_registered:
+        return
+    try:
+        atexit.register(_graceful_shutdown)
+        signal.signal(signal.SIGINT, _graceful_shutdown)
+        signal.signal(signal.SIGTERM, _graceful_shutdown)
+    except Exception as e:
+        try:
+            logger.warning(f"Failed to register shutdown handlers: {e}")
+        except Exception:
+            pass
+    _shutdown_registered = True
+
+
+# Register signal/atexit handlers at import time
+_register_shutdown_handlers()
 
 
 @asynccontextmanager
