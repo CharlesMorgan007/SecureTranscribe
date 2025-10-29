@@ -180,13 +180,13 @@ try:
         func = getattr(lib, 'cudnnCreateTensorDescriptor', None)
         if func:
             print("✅ cuDNN symbols available")
-            return True
+            # return True
         else:
             print("⚠️ cuDNN CreateTensorDescriptor not found")
-            return False
+            # return False
     except Exception as e:
         print(f"❌ cuDNN symbol access failed: {{e}}")
-        return False
+        # return False
 
 except Exception as e:
     print(f"❌ Library loading failed: {{e}}")
