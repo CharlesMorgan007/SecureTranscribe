@@ -7,6 +7,7 @@ import logging
 import os
 import tempfile
 import time
+import threading
 from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 import torch
@@ -87,6 +88,7 @@ class DiarizationService:
         self.audio_processor = AudioProcessor()
         self.sample_rate = AUDIO_SETTINGS["sample_rate"]
         self.min_speaker_duration = AUDIO_SETTINGS["min_speaker_duration"]
+        self._pipeline_lock = threading.RLock()
 
     def _get_device(self) -> str:
         """Determine the best device for processing using GPU optimizer."""
@@ -108,14 +110,15 @@ class DiarizationService:
                 f"Loading PyAnnote pipeline: {self.pyannote_model} on {self.device}"
             )
 
-            # Load the diarization pipeline
-            self.pipeline = Pipeline.from_pretrained(
-                self.pyannote_model,
-                use_auth_token=(
-                    self.settings.huggingface_token
-                    or os.environ.get("HUGGINGFACE_TOKEN")
-                ),  # Use token if available
-            )
+            # Load the diarization pipeline (guarded)
+            with self._pipeline_lock:
+                self.pipeline = Pipeline.from_pretrained(
+                    self.pyannote_model,
+                    use_auth_token=(
+                        self.settings.huggingface_token
+                        or os.environ.get("HUGGINGFACE_TOKEN")
+                    ),  # Use token if available
+                )
 
             # Move to appropriate device
             if self.device != "cpu":
@@ -126,17 +129,24 @@ class DiarizationService:
                         f'Invalid device "{self.device}" for PyAnnote; falling back to CPU'
                     )
                     target_device = torch.device("cpu")
-                try:
-                    self.pipeline.to(target_device)
-                except Exception as move_err:
-                    if "cudnn" in str(move_err).lower():
-                        logger.warning(
-                            "cuDNN error while moving PyAnnote pipeline to device; retrying on CPU"
-                        )
-                        self.pipeline.to(torch.device("cpu"))
-                        self.device = "cpu"
-                    else:
-                        raise
+                # Guard device move with a lock to avoid concurrent .to() issues
+                with self._pipeline_lock:
+                    try:
+                        self.pipeline.to(target_device)
+                    except Exception as move_err:
+                        if "cudnn" in str(move_err).lower():
+                            cudnn_ver = getattr(
+                                torch.backends.cudnn, "version", lambda: None
+                            )()
+                            logger.warning(
+                                "cuDNN error while moving PyAnnote pipeline to device; retrying on CPU "
+                                f"(device={self.device}, torch_cuda={getattr(torch.version, 'cuda', None)}, "
+                                f"cudnn_version={cudnn_ver}, error={move_err!r})"
+                            )
+                            self.pipeline.to(torch.device("cpu"))
+                            self.device = "cpu"
+                        else:
+                            raise
 
             logger.info(f"PyAnnote pipeline loaded successfully on {self.device}")
             # One-time warmup to ensure pipeline works on selected device
