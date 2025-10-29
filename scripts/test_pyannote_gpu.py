@@ -251,6 +251,7 @@ def test_pyannote_inference(pipeline, sr: int = 16000, seconds: float = 1.0) -> 
     print_header("Running minimal PyAnnote inference (generated sine wave)")
     try:
         waveform = generate_sine_wave(seconds=seconds, sr=sr, freq=440.0, channels=1)
+        waveform = torch.from_numpy(waveform).float()
         t0 = time.time()
         result = pipeline({"waveform": waveform, "sample_rate": sr})
         t1 = time.time()
