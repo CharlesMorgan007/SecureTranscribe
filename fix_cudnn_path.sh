@@ -36,15 +36,15 @@ fi
 echo "✅ Found cuDNN library directory: $CUDNN_PATH"
 
 # Check if required libraries exist
-REQUIRED_LIBS=("libcudnn_ops.so" "libcudnn_ops.so.9" "libcudnn_adv.so" "libcudnn.so")
-MISSING_LIBS=()
+REQUIRED_LIBS="libcudnn_ops.so libcudnn_ops.so.9 libcudnn_adv.so libcudnn.so"
+MISSING_LIBS=""
 
-for lib in "${REQUIRED_LIBS[@]}"; do
+for lib in $REQUIRED_LIBS; do
     if [ -f "$CUDNN_PATH/$lib" ]; then
         echo "✅ Found: $lib"
     else
         echo "❌ Missing: $lib"
-        MISSING_LIBS+=("$lib")
+        MISSING_LIBS="$MISSING_LIBS $lib"
     fi
 done
 
@@ -53,7 +53,7 @@ echo ""
 echo "📋 Available cuDNN libraries:"
 ls -la "$CUDNN_PATH"/libcudnn* 2>/dev/null || echo "No cuDNN libraries found"
 
-if [ ${#MISSING_LIBS[@]} -gt 0 ]; then
+if [ -n "$MISSING_LIBS" ]; then
     echo ""
     echo "⚠️  Warning: Some required libraries are missing"
     echo "This might indicate an incomplete PyTorch installation"
