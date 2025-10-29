@@ -118,7 +118,14 @@ class DiarizationService:
 
             # Move to appropriate device
             if self.device != "cpu":
-                self.pipeline.to(self.device)
+                try:
+                    target_device = torch.device(self.device)
+                except Exception:
+                    logger.warning(
+                        f'Invalid device "{self.device}" for PyAnnote; falling back to CPU'
+                    )
+                    target_device = torch.device("cpu")
+                self.pipeline.to(target_device)
 
             logger.info(f"PyAnnote pipeline loaded successfully on {self.device}")
 
