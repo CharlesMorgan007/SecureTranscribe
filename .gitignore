@@ -151,3 +151,9 @@ Thumbs.db
 *.pfx
 secrets/
 config/secrets/
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
