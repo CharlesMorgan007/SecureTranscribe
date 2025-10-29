@@ -293,9 +293,6 @@ class UserSession(Base):
 
         session.add(user_session)
         session.commit()
-        session.refresh(
-            user_session
-        )  # Ensure attributes are loaded and not expired after commit
 
         logger.info(
             f"Created new session: {session_id} for user: {user_identifier or 'anonymous'}"
