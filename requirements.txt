@@ -29,8 +29,9 @@ pydub==0.25.1
 # ML/AI Dependencies - Optimized for CUDA acceleration
 numpy>=1.24.0,<2.0.0
 # CUDA-enabled PyTorch (will fallback to CPU if CUDA not available)
-torch>=2.0.0,<2.5.0 --index-url https://download.pytorch.org/whl/cu118
-torchaudio>=2.0.0,<2.5.0 --index-url https://download.pytorch.org/whl/cu118
+torch --index-url https://download.pytorch.org/whl/cu121
+torchvision --index-url https://download.pytorch.org/whl/cu121
+torchaudio --index-url https://download.pytorch.org/whl/cu121
 faster-whisper==1.0.3
 # Downgraded PyAnnote for NumPy compatibility
 pyannote.audio>=2.0.0
