@@ -293,19 +293,73 @@ class TranscriptionService:
             if progress_callback:
                 progress_callback(30, "Processing audio")
 
-            # Perform transcription
-            segments, info = self.model.transcribe(
-                audio_path,
-                language=language,
-                beam_size=5,
-                vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500),
-            )
+            # Perform transcription with VAD first; on certain VAD failures or empty output, retry without VAD
+            segments = None
+            info = None
+            try:
+                segments, info = self.model.transcribe(
+                    audio_path,
+                    language=language,
+                    beam_size=5,
+                    vad_filter=True,
+                    vad_parameters=dict(min_silence_duration_ms=500),
+                )
+                # If VAD filtered everything (no segments), retry without VAD
+                try:
+                    segments = list(segments)
+                except TypeError:
+                    # Some versions already return a list-like
+                    pass
+                if not segments:
+                    logger.warning("VAD produced no segments; retrying without VAD")
+                    segments, info = self.model.transcribe(
+                        audio_path,
+                        language=language,
+                        beam_size=5,
+                        vad_filter=False,
+                    )
+            except Exception as vad_err:
+                # Known failure pattern: max() arg is empty when VAD frames are empty
+                if "max()" in str(vad_err) and "empty" in str(vad_err):
+                    logger.warning(
+                        "Transcribe with VAD failed due to empty iterable; retrying without VAD"
+                    )
+                    segments, info = self.model.transcribe(
+                        audio_path,
+                        language=language,
+                        beam_size=5,
+                        vad_filter=False,
+                    )
+                else:
+                    raise
 
             if progress_callback:
                 progress_callback(70, "Processing results")
 
             # Process segments
+            # Normalize to list and handle empty case
+            try:
+                segments = list(segments)
+            except TypeError:
+                pass
+
+            if not segments:
+                if progress_callback:
+                    progress_callback(90, "Finalizing results")
+                result = {
+                    "text": "",
+                    "segments": [],
+                    "language": getattr(info, "language", "unknown")
+                    if info
+                    else "unknown",
+                    "language_probability": getattr(info, "language_probability", 0.0)
+                    if info
+                    else 0.0,
+                    "avg_confidence": 0.0,
+                    "duration": getattr(info, "duration", 0.0) if info else 0.0,
+                }
+                return result
+
             all_segments = []
             total_confidence = 0.0
             segment_count = 0
@@ -454,9 +508,12 @@ class TranscriptionService:
                         os.remove(chunk_path)
 
             # Merge overlapping segments
-            merged_segments = self._merge_overlapping_segments(
-                all_segments, overlap_duration
-            )
+            if not all_segments:
+                merged_segments = []
+            else:
+                merged_segments = self._merge_overlapping_segments(
+                    all_segments, overlap_duration
+                )
 
             # Combine all text
             full_text = " ".join([seg["text"] for seg in merged_segments])

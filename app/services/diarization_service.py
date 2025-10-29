@@ -872,7 +872,10 @@ class DiarizationService:
                 # Update speaker name
                 trans_segment["speaker"] = best_speaker
 
-            transcription.updated_at = time.time()
+            import time
+            from datetime import datetime
+
+            transcription.updated_at = datetime.utcnow()
 
         except Exception as e:
             logger.error(f"Failed to update transcription speakers: {e}")
