@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool
 from sqlalchemy.exc import OperationalError
 from typing import Generator
 from .config import get_settings, DATABASE_SETTINGS
@@ -39,7 +39,7 @@ def create_database_engine() -> None:
                 "check_same_thread": False,
                 "timeout": 30,
             },
-            poolclass=StaticPool,
+            poolclass=NullPool,
             echo=DATABASE_SETTINGS["echo"],
             pool_pre_ping=DATABASE_SETTINGS["pool_pre_ping"],
             pool_recycle=DATABASE_SETTINGS["pool_recycle"],
@@ -164,7 +164,11 @@ def get_database() -> Generator[Session, None, None]:
                     f"Database locked, retrying ({retry_count}/{max_retries})"
                 )
                 time.sleep(0.5 * retry_count)  # Exponential backoff
-                db.rollback()
+                try:
+                    db.rollback()
+                finally:
+                    db.close()
+                db = SessionLocal()
                 continue
             else:
                 logger.error(f"Database operational error: {e}")
@@ -199,8 +203,7 @@ def get_database() -> Generator[Session, None, None]:
                 )
             raise
         finally:
-            if retry_count == max_retries - 1:
-                db.close()
+            db.close()
 
 
 def close_database() -> None:
