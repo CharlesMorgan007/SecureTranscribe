@@ -461,8 +461,13 @@ class DiarizationService:
                 chunk_waveform = waveform[start_sample:end_sample]
                 chunk_duration_actual = len(chunk_waveform) / sample_rate
 
-                # Skip very short chunks
-                if chunk_duration_actual < min_chunk_duration and start_time > 0:
+                # Skip very short chunks (but process if this is the final chunk)
+                is_last_chunk = end_time >= total_duration - 1e-6
+                if (
+                    chunk_duration_actual < min_chunk_duration
+                    and start_time > 0
+                    and not is_last_chunk
+                ):
                     logger.warning(
                         f"Skipping short chunk: {chunk_duration_actual:.1f}s"
                     )
@@ -539,8 +544,8 @@ class DiarizationService:
                 if start_time < 0:
                     start_time = 0
 
-            if not full_annotation.tracks:
-                # Fallback: single speaker for entire audio
+            # If no segments were added, fallback to single-speaker annotation
+            if not list(full_annotation.itertracks()):
                 logger.warning("No valid segments found, using single speaker fallback")
                 full_annotation[Segment(0, total_duration)] = "SPEAKER_00"
 
