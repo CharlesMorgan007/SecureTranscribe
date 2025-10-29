@@ -111,8 +111,9 @@ class DiarizationService:
             # Load the diarization pipeline
             self.pipeline = Pipeline.from_pretrained(
                 self.pyannote_model,
-                use_auth_token=os.environ.get(
-                    "HUGGINGFACE_TOKEN"
+                use_auth_token=(
+                    self.settings.huggingface_token
+                    or os.environ.get("HUGGINGFACE_TOKEN")
                 ),  # Use token if available
             )
 
@@ -125,7 +126,17 @@ class DiarizationService:
                         f'Invalid device "{self.device}" for PyAnnote; falling back to CPU'
                     )
                     target_device = torch.device("cpu")
-                self.pipeline.to(target_device)
+                try:
+                    self.pipeline.to(target_device)
+                except Exception as move_err:
+                    if "cudnn" in str(move_err).lower():
+                        logger.warning(
+                            "cuDNN error while moving PyAnnote pipeline to device; retrying on CPU"
+                        )
+                        self.pipeline.to(torch.device("cpu"))
+                        self.device = "cpu"
+                    else:
+                        raise
 
             logger.info(f"PyAnnote pipeline loaded successfully on {self.device}")
 
@@ -137,6 +148,27 @@ class DiarizationService:
                 logger.warning("Using mock diarization pipeline for development")
                 self.pipeline = MockDiarizationPipeline()
                 return
+
+            # cuDNN error handling: retry on CPU
+            if "cudnn" in str(e).lower():
+                try:
+                    logger.warning(
+                        "cuDNN error detected during PyAnnote load; retrying on CPU"
+                    )
+                    token = self.settings.huggingface_token or os.environ.get(
+                        "HUGGINGFACE_TOKEN"
+                    )
+                    self.device = "cpu"
+                    self.pipeline = Pipeline.from_pretrained(
+                        self.pyannote_model,
+                        use_auth_token=token,
+                    )
+                    logger.info(
+                        "PyAnnote pipeline loaded successfully on CPU after cuDNN error"
+                    )
+                    return
+                except Exception as cpu_err:
+                    logger.error(f"CPU fallback for PyAnnote failed: {cpu_err}")
 
             # Check if it's an authentication error
             if "gated" in str(e).lower() or "token" in str(e).lower():
