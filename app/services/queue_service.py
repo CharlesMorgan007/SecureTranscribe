@@ -387,7 +387,7 @@ class QueueService:
                     # Step 3: Final processing (20% of progress)
                     progress_callback(80, "Finalizing results")
 
-                    # Update speaker assignments in transcription
+                    # Update speaker assignments in transcription (map matched profiles)
                     if diarization_result.get("speaker_matches"):
                         for segment in transcription.segments or []:
                             speaker_label = segment.get("speaker", "")
@@ -396,6 +396,156 @@ class QueueService:
                             )
                             if matched_speaker:
                                 segment["speaker"] = matched_speaker.name
+
+                    # Auto-create Speaker rows from diarization labels and generate preview clips
+                    try:
+                        from app.models.speaker import Speaker
+                        from app.services.audio_processor import AudioProcessor
+                    except Exception:
+                        Speaker = None
+                        AudioProcessor = None
+
+                    try:
+                        # Derive unique speaker labels from diarization or transcription
+                        speakers_labels = set()
+                        if isinstance(diarization_result.get("speakers"), list):
+                            speakers_labels = set(
+                                diarization_result.get("speakers") or []
+                            )
+                        else:
+                            # Fall back to labels present in transcription segments
+                            if transcription.segments:
+                                for _seg in transcription.segments:
+                                    lbl = _seg.get("speaker")
+                                    if lbl:
+                                        speakers_labels.add(lbl)
+
+                        # Build minimal preview segments (2-5s) per speaker
+                        preview_segments = []
+                        first_segment_for_label = {}
+                        if transcription.segments:
+                            for _seg in transcription.segments:
+                                lbl = _seg.get("speaker")
+                                if not lbl or (
+                                    speakers_labels and lbl not in speakers_labels
+                                ):
+                                    continue
+                                if lbl in first_segment_for_label:
+                                    continue
+                                s = float(_seg.get("start_time", 0.0) or 0.0)
+                                e = float(_seg.get("end_time", s + 2.0) or (s + 2.0))
+                                # Ensure 2-5 sec window
+                                duration = max(0.0, e - s)
+                                if duration < 2.0:
+                                    e = s + 2.0
+                                if (e - s) > 5.0:
+                                    e = s + 5.0
+                                first_segment_for_label[lbl] = {
+                                    "speaker": lbl,
+                                    "start_time": s,
+                                    "end_time": e,
+                                }
+                                preview_segments.append(first_segment_for_label[lbl])
+
+                        preview_paths = {}
+                        audio_processor = None
+                        if AudioProcessor and preview_segments:
+                            try:
+                                audio_processor = AudioProcessor()
+                                # Create short WAV previews for each identified speaker
+                                preview_paths = audio_processor.create_audio_segments(
+                                    job.file_path, preview_segments
+                                )
+                            except Exception as seg_err:
+                                logger.warning(
+                                    f"Failed creating preview segments: {seg_err}"
+                                )
+
+                        # Create or update Speaker profiles and attach voice features from previews
+                        if Speaker:
+                            for lbl in speakers_labels:
+                                # Create speaker if missing
+                                speaker = (
+                                    db.query(Speaker)
+                                    .filter(
+                                        Speaker.name == lbl, Speaker.is_active == True
+                                    )
+                                    .first()
+                                )
+                                if not speaker:
+                                    speaker = Speaker(name=lbl)
+                                    db.add(speaker)
+                                    db.commit()
+                                    db.refresh(speaker)
+
+                                # Update voice characteristics from preview audio (if generated)
+                                if (
+                                    audio_processor
+                                    and preview_paths
+                                    and lbl in preview_paths
+                                ):
+                                    try:
+                                        feats = audio_processor.extract_audio_features(
+                                            preview_paths[lbl]
+                                        )
+                                        if feats:
+                                            speaker.update_voice_characteristics(
+                                                pitch=feats.get("avg_pitch"),
+                                                pitch_variance=feats.get("pitch_std"),
+                                                speaking_rate=feats.get(
+                                                    "speaking_rate"
+                                                ),
+                                                voice_energy=feats.get("voice_energy"),
+                                                spectral_centroid=feats.get(
+                                                    "spectral_centroid"
+                                                ),
+                                                spectral_rolloff=feats.get(
+                                                    "spectral_rolloff"
+                                                ),
+                                                zero_crossing_rate=feats.get(
+                                                    "zero_crossing_rate"
+                                                ),
+                                            )
+                                            # Increment sample count for running averages
+                                            try:
+                                                speaker.sample_count = int(
+                                                    (speaker.sample_count or 0) + 1
+                                                )
+                                            except Exception:
+                                                pass
+                                        db.commit()
+                                    except Exception as feat_err:
+                                        logger.warning(
+                                            f"Failed extracting features for {lbl}: {feat_err}"
+                                        )
+
+                                # If only one overall speaker, link as primary
+                                try:
+                                    total_speakers = len(
+                                        set(
+                                            seg.get("speaker")
+                                            for seg in (transcription.segments or [])
+                                            if seg.get("speaker")
+                                        )
+                                    )
+                                    if total_speakers == 1:
+                                        transcription.speaker_id = speaker.id
+                                except Exception:
+                                    pass
+
+                        # Embed preview clip path in the first segment per speaker for UI convenience
+                        if preview_paths and transcription.segments:
+                            used = set()
+                            for seg in transcription.segments:
+                                lbl = seg.get("speaker")
+                                if lbl in preview_paths and lbl not in used:
+                                    seg["preview_clip_path"] = preview_paths[lbl]
+                                    used.add(lbl)
+
+                    except Exception as auto_speaker_err:
+                        logger.warning(
+                            f"Auto-create speakers/preview clips failed: {auto_speaker_err}"
+                        )
 
                     # Mark job and transcription as completed
                     job.mark_as_completed()

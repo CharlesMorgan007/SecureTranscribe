@@ -404,25 +404,42 @@ async def assign_speakers(
                 "Transcription must be completed before assigning speakers"
             )
 
-        # Update speaker assignments
+        # Update speaker assignments and ensure speaker profiles exist
+        primary_speaker_id = None
+        assigned_names = []
+
         for old_name, new_name in speaker_assignments.items():
             transcription.update_speaker_assignment(old_name, new_name)
+            assigned_names.append(new_name)
 
-            # Create or update speaker profile
+            # Create or fetch speaker profile
             speaker = (
                 db.query(Speaker)
                 .filter(Speaker.name == new_name, Speaker.is_active == True)
                 .first()
             )
-
             if not speaker:
                 speaker = Speaker(name=new_name)
                 db.add(speaker)
                 db.commit()
                 db.refresh(speaker)
 
-            # Link transcription to speaker
-            transcription.speaker_id = speaker.id
+            # Track candidate primary speaker; if multiple distinct, unset
+            if primary_speaker_id is None:
+                primary_speaker_id = speaker.id
+            elif speaker.id != primary_speaker_id:
+                primary_speaker_id = None
+
+        # Update transcription flags after assignments
+        speakers_after = transcription.get_speaker_list()
+        transcription.num_speakers = len(speakers_after) or 0
+        transcription.speakers_assigned = True
+
+        # Only link a primary speaker if there is exactly one speaker overall
+        if len(set(speakers_after)) == 1 and primary_speaker_id is not None:
+            transcription.speaker_id = primary_speaker_id
+        else:
+            transcription.speaker_id = None
 
         db.commit()
 
@@ -430,7 +447,8 @@ async def assign_speakers(
             "success": True,
             "transcription_id": transcription.id,
             "speakers_assigned": len(speaker_assignments),
-            "speakers": transcription.get_speaker_list(),
+            "speakers": speakers_after,
+            "primary_speaker_id": transcription.speaker_id,
         }
 
     except SecureTranscribeError:
@@ -440,7 +458,101 @@ async def assign_speakers(
         raise ValidationError(f"Failed to assign speakers: {str(e)}")
 
 
-@router.post("/export/{transcription_id}")
+@router.get("/speakers/labels/{transcription_id}")
+async def get_diarized_speaker_labels(
+    transcription_id: int,
+    db: Session = Depends(get_database),
+    user_session: UserSession = Depends(get_current_session),
+):
+    """
+    Return diarized speaker labels and short preview clip info for UI assignment.
+
+    The response includes one row per identified speaker with:
+    - label: current speaker label (e.g., "SPEAKER_00" or a matched name)
+    - start_time/end_time: a 2-5s window from the first occurrence of that speaker
+    - preview_clip_path: path to a generated short WAV preview (if available)
+    - sample_text: transcript text for that sample segment (if available)
+    """
+    try:
+        transcription = (
+            db.query(Transcription)
+            .filter(
+                Transcription.id == transcription_id,
+                Transcription.session_id == user_session.session_id,
+            )
+            .first()
+        )
+
+        if not transcription:
+            raise HTTPException(status_code=404, detail="Transcription not found")
+
+        if not transcription.is_completed:
+            raise HTTPException(
+                status_code=400, detail="Transcription is not completed yet"
+            )
+
+        segments = transcription.segments or []
+        if not segments:
+            return {
+                "transcription_id": transcription.id,
+                "speakers": [],
+            }
+
+        # Collect unique speaker labels present in segments (post-diarization)
+        speakers = []
+        seen = set()
+        first_segment_for_label = {}
+
+        # Find first segment per label and prepare 2-5s preview window
+        for seg in segments:
+            lbl = seg.get("speaker")
+            if not lbl:
+                continue
+            if lbl in first_segment_for_label:
+                continue
+
+            start = float(seg.get("start_time", 0.0) or 0.0)
+            end = float(seg.get("end_time", start + 2.0) or (start + 2.0))
+            duration = max(0.0, end - start)
+
+            # Ensure 2-5s window
+            if duration < 2.0:
+                end = start + 2.0
+            if (end - start) > 5.0:
+                end = start + 5.0
+
+            first_segment_for_label[lbl] = {
+                "label": lbl,
+                "start_time": start,
+                "end_time": end,
+                "preview_clip_path": seg.get(
+                    "preview_clip_path"
+                ),  # may be injected at job completion
+                "sample_text": seg.get("text", ""),
+            }
+
+        # Convert mapping to list preserving first-seen order
+        for seg in segments:
+            lbl = seg.get("speaker")
+            if lbl and lbl in first_segment_for_label and lbl not in seen:
+                speakers.append(first_segment_for_label[lbl])
+                seen.add(lbl)
+
+        return {
+            "transcription_id": transcription.id,
+            "speakers": speakers,
+        }
+
+    except SecureTranscribeError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch diarized speaker labels: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch speaker labels: {str(e)}"
+        )
+
+
+@router.api_route("/export/{transcription_id}", methods=["GET", "POST"])
 async def export_transcription(
     transcription_id: int,
     export_format: str,
