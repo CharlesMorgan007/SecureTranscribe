@@ -131,8 +131,59 @@ class DiarizationService:
                     target_device = torch.device("cpu")
                 # Guard device move with a lock to avoid concurrent .to() issues
                 with self._pipeline_lock:
+                    moved = False
                     try:
-                        self.pipeline.to(target_device)
+                        # CUDA/cuDNN preflight on target device to catch mismatches early
+                        if target_device.type == "cuda":
+                            try:
+                                _x = torch.randn(1, 1, 64, 64, device=target_device)
+                                _conv = torch.nn.Conv2d(1, 1, kernel_size=3).to(
+                                    target_device
+                                )
+                                _y = _conv(_x)
+                                _ = _y.mean().item()
+                                del _x, _conv, _y
+                                torch.cuda.synchronize(device=target_device.index or 0)
+                                logger.info(
+                                    f"CUDA/cuDNN preflight OK on {target_device} "
+                                    f"(torch_cuda={getattr(torch.version, 'cuda', None)}, "
+                                    f"cudnn_version={getattr(torch.backends.cudnn, 'version', lambda: None)()})"
+                                )
+                            except Exception as pre_err:
+                                if "cudnn" in str(pre_err).lower():
+                                    prev_cudnn = torch.backends.cudnn.enabled
+                                    cudnn_ver = getattr(
+                                        torch.backends.cudnn, "version", lambda: None
+                                    )()
+                                    logger.warning(
+                                        "cuDNN error during preflight; attempting pipeline move with cuDNN disabled "
+                                        f"(device={self.device}, torch_cuda={getattr(torch.version, 'cuda', None)}, "
+                                        f"cudnn_version={cudnn_ver}, error={pre_err!r})"
+                                    )
+                                    try:
+                                        torch.backends.cudnn.enabled = False
+                                        self.pipeline.to(target_device)
+                                        logger.info(
+                                            "PyAnnote pipeline moved to CUDA with cuDNN disabled"
+                                        )
+                                        moved = True
+                                    except Exception as move_err2:
+                                        logger.warning(
+                                            "Move with cuDNN disabled failed; falling back to CPU "
+                                            f"(error={move_err2!r})"
+                                        )
+                                        self.pipeline.to(torch.device("cpu"))
+                                        self.device = "cpu"
+                                        moved = True
+                                    finally:
+                                        torch.backends.cudnn.enabled = prev_cudnn
+                                else:
+                                    logger.warning(
+                                        f"Non-cuDNN error during preflight: {pre_err!r}"
+                                    )
+                        if not moved:
+                            self.pipeline.to(target_device)
+                            moved = True
                     except Exception as move_err:
                         if "cudnn" in str(move_err).lower():
                             cudnn_ver = getattr(
