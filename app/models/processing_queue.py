@@ -452,25 +452,58 @@ class ProcessingQueue(Base):
         failed_jobs = session.query(cls).filter(cls.status == "failed").count()
 
         # Average wait time
-        avg_wait_time = (
-            session.query(
-                func.avg(func.extract("epoch", cls.started_at - cls.created_at))
+        if session.bind.dialect.name == "sqlite":
+            avg_wait_time = (
+                session.query(
+                    func.avg(
+                        (
+                            func.julianday(cls.started_at)
+                            - func.julianday(cls.created_at)
+                        )
+                        * 86400.0
+                    )
+                )
+                .filter(cls.status.in_(["processing", "completed", "failed"]))
+                .filter(cls.started_at.isnot(None))
+                .scalar()
+                or 0.0
             )
-            .filter(cls.status.in_(["processing", "completed", "failed"]))
-            .filter(cls.started_at.isnot(None))
-            .scalar()
-            or 0.0
-        )
+        else:
+            avg_wait_time = (
+                session.query(
+                    func.avg(func.extract("epoch", cls.started_at - cls.created_at))
+                )
+                .filter(cls.status.in_(["processing", "completed", "failed"]))
+                .filter(cls.started_at.isnot(None))
+                .scalar()
+                or 0.0
+            )
 
         # Average processing time
-        avg_processing_time = (
-            session.query(
-                func.avg(func.extract("epoch", cls.completed_at - cls.started_at))
+        if session.bind.dialect.name == "sqlite":
+            avg_processing_time = (
+                session.query(
+                    func.avg(
+                        (
+                            func.julianday(cls.completed_at)
+                            - func.julianday(cls.started_at)
+                        )
+                        * 86400.0
+                    )
+                )
+                .filter(cls.status == "completed", cls.completed_at.isnot(None))
+                .scalar()
+                or 0.0
             )
-            .filter(cls.status == "completed", cls.completed_at.isnot(None))
-            .scalar()
-            or 0.0
-        )
+        else:
+            avg_processing_time = (
+                session.query(
+                    func.avg(func.extract("epoch", cls.completed_at - cls.started_at))
+                )
+                .filter(cls.status == "completed", cls.completed_at.isnot(None))
+                .scalar()
+                or 0.0
+            )
 
         return {
             "total_jobs": total_jobs,

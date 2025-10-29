@@ -102,7 +102,10 @@ def init_database() -> None:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
     except Exception as e:
-        if "tuple index out of range" in str(e) or "no such table" in str(e).lower():
+        if any(
+            m in str(e).lower()
+            for m in ("database disk image is malformed", "file is not a database")
+        ):
             logger.warning(
                 "Database schema inconsistency detected, performing complete reset..."
             )
@@ -169,7 +172,16 @@ def get_database() -> Generator[Session, None, None]:
             logger.error(f"Database session error: {e}")
             db.rollback()
             # Only reset database on critical schema corruption errors
-            if "tuple index out of range" in str(e) and retry_count == 0:
+            if (
+                any(
+                    m in str(e).lower()
+                    for m in (
+                        "database disk image is malformed",
+                        "file is not a database",
+                    )
+                )
+                and retry_count == 0
+            ):
                 logger.error(f"Database schema corruption detected: {e}")
                 # Try to backup before reset
                 try:
