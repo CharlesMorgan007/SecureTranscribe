@@ -139,6 +139,26 @@ class DiarizationService:
                         raise
 
             logger.info(f"PyAnnote pipeline loaded successfully on {self.device}")
+            # One-time warmup to ensure pipeline works on selected device
+            try:
+                # Fast warmup with 0.5s of silence at configured sample rate
+                test_sr = self.sample_rate
+                test_wave = torch.zeros(1, int(0.5 * test_sr), dtype=torch.float32)
+                _ = self.pipeline({"waveform": test_wave, "sample_rate": test_sr})
+                logger.info(f"PyAnnote warmup succeeded on {self.device}")
+            except Exception as warm_err:
+                logger.warning(f"PyAnnote warmup failed on {self.device}: {warm_err}")
+                # Fallback to CPU as a safety net
+                try:
+                    self.pipeline.to(torch.device("cpu"))
+                    self.device = "cpu"
+                    # Try warmup again on CPU
+                    test_sr = self.sample_rate
+                    test_wave = torch.zeros(1, int(0.5 * test_sr), dtype=torch.float32)
+                    _ = self.pipeline({"waveform": test_wave, "sample_rate": test_sr})
+                    logger.info("PyAnnote warmup succeeded on CPU after fallback")
+                except Exception as cpu_warm_err:
+                    logger.error(f"PyAnnote CPU warmup also failed: {cpu_warm_err}")
 
         except Exception as e:
             logger.error(f"Failed to load PyAnnote pipeline: {e}")
