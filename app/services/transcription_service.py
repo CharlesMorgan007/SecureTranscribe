@@ -409,6 +409,9 @@ class TranscriptionService:
             # Combine all text
             full_text = " ".join([seg["text"] for seg in all_segments])
 
+            logger.info(
+                f"Chunked transcription summary: chunks={num_chunks}, raw_segments={len(all_segments)}, merged_segments={len(merged_segments)}"
+            )
             if progress_callback:
                 progress_callback(90, "Finalizing results")
 
@@ -453,9 +456,18 @@ class TranscriptionService:
                 duration_minutes
             )
 
-            # Apply optimization parameters
+            # Apply optimization parameters with overrides for long files
             chunk_duration = optimization_params["chunk_size"]
             overlap_duration = self.overlap_length
+
+            # For long files, prefer larger chunks and a slightly larger overlap
+            if duration >= 3600:  # >= 60 minutes
+                chunk_duration = max(chunk_duration, 90)
+                overlap_duration = 10
+            elif duration >= 600:  # >= 10 minutes
+                chunk_duration = max(chunk_duration, 60)
+                overlap_duration = 10
+
             step_duration = chunk_duration - overlap_duration
             clear_cache_frequency = optimization_params["clear_cache_frequency"]
 
@@ -463,7 +475,7 @@ class TranscriptionService:
 
             logger.info(
                 f"Processing {duration:.2f}s audio in {num_chunks} chunks "
-                f"(chunk_size: {chunk_duration}s, clear_cache every {clear_cache_frequency} chunks)"
+                f"(chunk_size: {chunk_duration}s, overlap: {overlap_duration}s, step: {step_duration}s, clear_cache every {clear_cache_frequency} chunks)"
             )
 
             all_segments = []
@@ -498,7 +510,10 @@ class TranscriptionService:
                     )
 
                     # Adjust timestamps
-                    for segment in chunk_result["segments"]:
+                    logger.debug(
+                        f"Chunk {i + 1}/{num_chunks} produced {len(chunk_result.get('segments', []))} segments"
+                    )
+                    for segment in chunk_result.get("segments", []):
                         segment["start"] += start_time
                         segment["end"] += start_time
 

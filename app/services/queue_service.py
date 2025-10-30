@@ -397,6 +397,31 @@ class QueueService:
                             if matched_speaker:
                                 segment["speaker"] = matched_speaker.name
 
+                    # Mark completion BEFORE post-processing enrichment to avoid UI hanging in 'processing'
+                    job.mark_as_completed()
+                    transcription.mark_as_completed()
+                    try:
+                        db.commit()
+                        logger.info(
+                            f"Job {job.job_id} committed successfully (completion marked before speaker enrichment)"
+                        )
+                    except Exception as commit_error:
+                        logger.error(f"Failed to commit completion: {commit_error}")
+                        db.rollback()
+                        raise QueueError(
+                            f"Failed to commit completion: {str(commit_error)}"
+                        )
+
+                    # Report 100% completion to UI
+                    try:
+                        progress_callback(100, "Completed")
+                    except Exception:
+                        pass
+
+                    logger.info(
+                        "Starting post-completion speaker enrichment (auto-create speakers, previews, features)..."
+                    )
+
                     # Auto-create Speaker rows from diarization labels and generate preview clips
                     try:
                         from app.models.speaker import Speaker
@@ -449,12 +474,18 @@ class QueueService:
 
                         preview_paths = {}
                         audio_processor = None
+                        logger.info(
+                            f"Auto speaker creation: labels={len(speakers_labels)}, preview_segments={len(preview_segments)}"
+                        )
                         if AudioProcessor and preview_segments:
                             try:
                                 audio_processor = AudioProcessor()
                                 # Create short WAV previews for each identified speaker
                                 preview_paths = audio_processor.create_audio_segments(
                                     job.file_path, preview_segments
+                                )
+                                logger.info(
+                                    f"Created {len(preview_paths)} preview clips for speakers"
                                 )
                             except Exception as seg_err:
                                 logger.warning(
@@ -547,15 +578,17 @@ class QueueService:
                             f"Auto-create speakers/preview clips failed: {auto_speaker_err}"
                         )
 
-                    # Mark job and transcription as completed
-                    job.mark_as_completed()
-                    transcription.mark_as_completed()
-
-                    # Commit the completion
-                    db.commit()
-                    logger.info(f"Job {job.job_id} committed successfully")
-
-                    progress_callback(100, "Completed")
+                    # Post-completion enrichment finished; commit any changes (speakers, previews, features)
+                    try:
+                        db.commit()
+                        logger.info(
+                            f"Post-completion enrichment committed for job {job.job_id}"
+                        )
+                    except Exception as commit_error:
+                        logger.warning(
+                            f"Post-completion enrichment commit failed: {commit_error}"
+                        )
+                        db.rollback()
 
                     result = {
                         "transcription": transcription_result,
