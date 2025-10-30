@@ -410,7 +410,7 @@ class TranscriptionService:
             full_text = " ".join([seg["text"] for seg in all_segments])
 
             logger.info(
-                f"Chunked transcription summary: chunks={num_chunks}, raw_segments={len(all_segments)}, merged_segments={len(merged_segments)}"
+                f"Single-chunk transcription summary: segments={len(all_segments)}"
             )
             if progress_callback:
                 progress_callback(90, "Finalizing results")
