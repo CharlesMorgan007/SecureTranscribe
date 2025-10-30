@@ -235,6 +235,30 @@ class TranscriptionService:
                 transcription.full_transcript = result["text"]
                 transcription.language_detected = result.get("language", "unknown")
                 transcription.confidence_score = result.get("avg_confidence", 0.0)
+
+                # Persist final (merged) segments so exports include the complete transcript
+                merged_for_db = []
+                for seg in result.get("segments", []):
+                    start_v = seg.get("start", seg.get("start_time", 0.0))
+                    end_v = seg.get("end", seg.get("end_time", 0.0))
+                    text_v = seg.get("text", "")
+                    merged_for_db.append(
+                        {
+                            "id": len(merged_for_db) + 1,
+                            "speaker": "Speaker",  # placeholder; diarization updates this later
+                            "text": text_v.strip(),
+                            "start_time": start_v,
+                            "end_time": end_v,
+                            "duration": (end_v - start_v)
+                            if end_v is not None and start_v is not None
+                            else 0.0,
+                            "confidence": seg.get("confidence", 0.0),
+                            "word_count": len(text_v.split()),
+                        }
+                    )
+                if merged_for_db:
+                    transcription.segments = merged_for_db
+
                 transcription.mark_as_completed()
 
                 logger.info(f"Transcription completed for {transcription.session_id}")
