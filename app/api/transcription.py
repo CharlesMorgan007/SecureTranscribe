@@ -345,16 +345,45 @@ async def get_transcription_status(
 
         # Add result information if completed
         if transcription.is_completed:
+            # Build per-speaker preview/sample info for UI
+            speakers_list = transcription.get_speaker_list()
+            segments = transcription.segments or []
+            speaker_samples = []
+            seen = set()
+            for seg in segments:
+                lbl = seg.get("speaker")
+                if not lbl or lbl in seen:
+                    continue
+                start = float(seg.get("start_time", 0.0) or 0.0)
+                end = float(seg.get("end_time", start + 2.0) or (start + 2.0))
+                # ensure 2-5s window
+                if end - start < 2.0:
+                    end = start + 2.0
+                if end - start > 5.0:
+                    end = start + 5.0
+                speaker_samples.append(
+                    {
+                        "label": lbl,
+                        "start_time": start,
+                        "end_time": end,
+                        "preview_clip_path": seg.get("preview_clip_path"),
+                        "sample_text": seg.get("text", ""),
+                    }
+                )
+                seen.add(lbl)
+
             result.update(
                 {
                     "full_transcript": transcription.full_transcript,
                     "language_detected": transcription.language_detected,
                     "confidence_score": transcription.confidence_score,
                     "num_speakers": transcription.num_speakers,
-                    "speakers": transcription.get_speaker_list(),
+                    "speakers": speakers_list,
                     "segments": transcription.segments,
                     "speaker_stats": transcription.get_speaker_stats(),
                     "preview_clips": transcription.generate_preview_clips(),
+                    "needs_speaker_assignment": not transcription.speakers_assigned,
+                    "speaker_samples": speaker_samples,
                 }
             )
 
